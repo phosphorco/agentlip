@@ -4,6 +4,13 @@ import type { Server } from "bun";
 import type { HealthResponse } from "@agentchat/protocol";
 import { PROTOCOL_VERSION } from "@agentchat/protocol";
 import { requireAuth, requireWsToken } from "./authMiddleware";
+import {
+  HubRateLimiter,
+  rateLimitedResponse,
+  addRateLimitHeaders,
+  type RateLimiterConfig,
+} from "./rateLimiter";
+import { readJsonBody, SIZE_LIMITS } from "./bodyParser";
 
 // Re-export auth middleware utilities
 export {
@@ -18,6 +25,32 @@ export {
   type WsAuthFailure,
 } from "./authMiddleware";
 
+// Re-export rate limiter utilities
+export {
+  RateLimiter,
+  HubRateLimiter,
+  rateLimitedResponse,
+  addRateLimitHeaders,
+  DEFAULT_RATE_LIMITS,
+  type RateLimiterConfig,
+  type RateLimitResult,
+} from "./rateLimiter";
+
+// Re-export body parser utilities
+export {
+  readJsonBody,
+  parseWsMessage,
+  validateWsMessageSize,
+  validateJsonSize,
+  payloadTooLargeResponse,
+  invalidJsonResponse,
+  invalidContentTypeResponse,
+  validationErrorResponse,
+  SIZE_LIMITS,
+  type ReadJsonBodyOptions,
+  type JsonBodyResult,
+} from "./bodyParser";
+
 export interface StartHubOptions {
   host?: string;
   port?: number;
@@ -27,6 +60,12 @@ export interface StartHubOptions {
   allowUnsafeNetwork?: boolean;
   /** Auth token for mutation endpoints + WS. If not provided, mutations are rejected. */
   authToken?: string;
+  /** Rate limit config for per-client limiting */
+  rateLimitPerClient?: RateLimiterConfig;
+  /** Rate limit config for global limiting */
+  rateLimitGlobal?: RateLimiterConfig;
+  /** Disable rate limiting (for testing) */
+  disableRateLimiting?: boolean;
 }
 
 export interface HubServer {
@@ -99,6 +138,9 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
     schemaVersion = 0, // Will be replaced with actual schema version in future tasks
     allowUnsafeNetwork = false,
     authToken,
+    rateLimitPerClient,
+    rateLimitGlobal,
+    disableRateLimiting = false,
   } = options;
   
   // Validate localhost-only bind
@@ -106,6 +148,12 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
   
   // Track process start time for uptime calculation
   const startTimeMs = Date.now();
+
+  // Initialize rate limiter (unless disabled)
+  const rateLimiter = disableRateLimiting
+    ? null
+    : new HubRateLimiter(rateLimitGlobal, rateLimitPerClient);
+  rateLimiter?.startCleanup();
   
   const server = Bun.serve({
     hostname: host,
@@ -114,7 +162,7 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
     async fetch(req): Promise<Response> {
       const url = new URL(req.url);
 
-      // GET /health - unauthenticated health check
+      // GET /health - unauthenticated health check (no rate limiting)
       if (url.pathname === "/health" && req.method === "GET") {
         const uptimeSeconds = Math.floor((Date.now() - startTimeMs) / 1000);
 
@@ -131,24 +179,66 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
         return Response.json(healthResponse);
       }
 
+      // Apply rate limiting to all non-health endpoints
+      let rateLimitResult: { allowed: boolean; limit: number; remaining: number; resetAt: number } | null = null;
+      if (rateLimiter) {
+        rateLimitResult = rateLimiter.check(req);
+        if (!rateLimitResult.allowed) {
+          return rateLimitedResponse(rateLimitResult);
+        }
+      }
+
+      // Helper to add rate limit headers to response
+      const withRateLimitHeaders = (response: Response): Response => {
+        if (rateLimitResult) {
+          return addRateLimitHeaders(response, rateLimitResult);
+        }
+        return response;
+      };
+
       // POST /api/v1/_ping - authenticated ping (sample mutation endpoint)
-      // Demonstrates auth middleware usage pattern for future mutations
+      // Demonstrates auth + rate limiting + body parsing middleware usage
       if (url.pathname === "/api/v1/_ping" && req.method === "POST") {
         if (!authToken) {
           // Hub started without auth token - reject all mutations
-          return new Response(
-            JSON.stringify({ error: "Service unavailable", code: "NO_AUTH_CONFIGURED" }),
-            { status: 503, headers: { "Content-Type": "application/json" } }
+          return withRateLimitHeaders(
+            new Response(
+              JSON.stringify({ error: "Service unavailable", code: "NO_AUTH_CONFIGURED" }),
+              { status: 503, headers: { "Content-Type": "application/json" } }
+            )
           );
         }
 
         const authResult = requireAuth(req, authToken);
         if (authResult.ok === false) {
-          return authResult.response;
+          return withRateLimitHeaders(authResult.response);
         }
 
-        // Authenticated - return pong
-        return Response.json({ pong: true, instance_id: instanceId });
+        // Parse JSON body with size limit (optional body for _ping)
+        const bodyResult = await readJsonBody<{ echo?: string }>(req, {
+          maxBytes: SIZE_LIMITS.MESSAGE_BODY,
+        });
+
+        // If body provided but invalid, return error
+        if (bodyResult.ok === false) {
+          // Check if it's a content-type issue (no body is ok for ping)
+          const contentType = req.headers.get("Content-Type");
+          if (contentType && contentType.includes("application/json")) {
+            return withRateLimitHeaders(bodyResult.response);
+          }
+        }
+
+        // Authenticated - return pong (with optional echo)
+        const responseBody: { pong: boolean; instance_id: string; echo?: string } = {
+          pong: true,
+          instance_id: instanceId,
+        };
+
+        if (bodyResult.ok && bodyResult.data?.echo) {
+          responseBody.echo = bodyResult.data.echo;
+        }
+
+        return withRateLimitHeaders(Response.json(responseBody));
       }
 
       // 404 for all other routes
@@ -173,6 +263,7 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
     host: boundHost,
 
     async stop() {
+      rateLimiter?.stopCleanup();
       await server.stop(true);
     },
   };

@@ -49,6 +49,24 @@ export {
   type ListResult,
 } from "./queries";
 
+// Re-export message mutations module
+export {
+  editMessage,
+  tombstoneDeleteMessage,
+  retopicMessage,
+  VersionConflictError,
+  MessageNotFoundError,
+  CrossChannelMoveError,
+  TopicNotFoundError,
+  type EditMessageOptions,
+  type EditMessageResult,
+  type TombstoneDeleteOptions,
+  type TombstoneDeleteResult,
+  type RetopicMode,
+  type RetopicMessageOptions,
+  type RetopicMessageResult,
+} from "./messageMutations";
+
 export const SCHEMA_VERSION = 1;
 
 interface OpenDbOptions {

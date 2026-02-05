@@ -55,6 +55,26 @@ export interface WsTestClient {
 }
 
 /**
+ * Get FTS enablement from options or environment variable.
+ * 
+ * Precedence:
+ * 1. Explicit options.enableFts (if provided)
+ * 2. AGENTCHAT_ENABLE_FTS env var (1=enabled, 0=disabled)
+ * 3. Default: false
+ */
+function resolveFtsEnabled(enableFts?: boolean): boolean {
+  if (enableFts !== undefined) {
+    return enableFts;
+  }
+  
+  const envValue = process.env.AGENTCHAT_ENABLE_FTS;
+  if (envValue === "1") return true;
+  if (envValue === "0") return false;
+  
+  return false;
+}
+
+/**
  * Create temporary workspace with initialized DB and migrations.
  * 
  * Creates:
@@ -62,14 +82,19 @@ export interface WsTestClient {
  * - .zulip/db.sqlite3 file
  * - Runs kernel migrations (schema v1, optionally FTS)
  * 
+ * FTS enablement can be controlled via:
+ * - Explicit options.enableFts parameter
+ * - AGENTCHAT_ENABLE_FTS environment variable (1=enabled, 0=disabled)
+ * - Default: false
+ * 
  * @param options - Configuration options
  * @returns TempWorkspace with cleanup function
  */
 export async function createTempWorkspace(options?: {
-  /** Enable FTS (opportunistic, non-fatal) */
+  /** Enable FTS (opportunistic, non-fatal). If undefined, uses AGENTCHAT_ENABLE_FTS env var. */
   enableFts?: boolean;
 }): Promise<TempWorkspace> {
-  const { enableFts = false } = options ?? {};
+  const enableFts = resolveFtsEnabled(options?.enableFts);
 
   // Create unique temp directory
   const timestamp = Date.now();
@@ -109,6 +134,7 @@ export async function createTempWorkspace(options?: {
  * - Binds to 127.0.0.1 with random available port
  * - Optional auth token
  * - Optional rate limiting disable
+ * - FTS configuration via options or AGENTCHAT_ENABLE_FTS env var
  * - Returns TestHub with stop() cleanup
  * 
  * @param options - Hub configuration
@@ -121,14 +147,17 @@ export async function startTestHub(options?: {
   authToken?: string;
   /** Disable rate limiting (useful for stress tests) */
   rateLimitDisabled?: boolean;
+  /** Enable FTS (opportunistic, non-fatal). If undefined, uses AGENTCHAT_ENABLE_FTS env var. */
+  enableFts?: boolean;
 }): Promise<TestHub> {
-  const { workspaceRoot, authToken, rateLimitDisabled = false } = options ?? {};
+  const { workspaceRoot, authToken, rateLimitDisabled = false, enableFts } = options ?? {};
 
   const server = await startHub({
     host: "127.0.0.1",
     port: 0, // Random available port
     authToken,
     disableRateLimiting: rateLimitDisabled,
+    enableFts: resolveFtsEnabled(enableFts),
     dbPath: workspaceRoot ? join(workspaceRoot, ".zulip", "db.sqlite3") : undefined,
   });
 

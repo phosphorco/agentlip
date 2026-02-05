@@ -568,7 +568,7 @@ describe("API v1 - Messages", () => {
     expect(response.status).toBe(409);
     const data: any = await parseResponse(response);
     expect(data.code).toBe("VERSION_CONFLICT");
-    expect(data.current_version).toBe(2);
+    expect(data.details.current).toBe(2);
   });
 
   test("PATCH /api/v1/messages/:message_id tombstone delete", async () => {

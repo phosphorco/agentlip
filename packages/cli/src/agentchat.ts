@@ -546,6 +546,524 @@ function printHumanSearch(result: SearchResult): void {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// msg send command (HTTP mutation)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface MsgSendOptions extends GlobalOptions {
+  topicId: string;
+  sender: string;
+  content?: string;
+  stdin?: boolean;
+}
+
+interface MsgSendResult {
+  status: "ok" | "error";
+  message_id?: string;
+  event_id?: number;
+  error?: string;
+  code?: string;
+}
+
+async function runMsgSend(options: MsgSendOptions): Promise<MsgSendResult> {
+  try {
+    // Get content from stdin or --content
+    let content: string;
+    if (options.stdin) {
+      // Read from stdin
+      const chunks: Buffer[] = [];
+      for await (const chunk of process.stdin) {
+        chunks.push(chunk);
+      }
+      content = Buffer.concat(chunks).toString("utf-8");
+    } else if (options.content !== undefined) {
+      content = options.content;
+    } else {
+      return {
+        status: "error",
+        error: "Either --content or --stdin is required",
+        code: "INVALID_INPUT",
+      };
+    }
+
+    // Get hub context
+    const ctx = await getHubContext(options.workspace);
+    if (!ctx) {
+      return {
+        status: "error",
+        error: "Hub not running (server.json not found)",
+        code: "HUB_NOT_RUNNING",
+      };
+    }
+
+    // Make request
+    const result = await hubRequest<{ message: any; event_id: number }>(
+      ctx,
+      "POST",
+      "/api/v1/messages",
+      {
+        topic_id: options.topicId,
+        sender: options.sender,
+        content_raw: content,
+      }
+    );
+
+    if (!result.ok) {
+      return {
+        status: "error",
+        error: result.error,
+        code: result.code,
+      };
+    }
+
+    return {
+      status: "ok",
+      message_id: result.data.message.id,
+      event_id: result.data.event_id,
+    };
+  } catch (err) {
+    return {
+      status: "error",
+      error: err instanceof Error ? err.message : String(err),
+      code: "INTERNAL_ERROR",
+    };
+  }
+}
+
+function printHumanMsgSend(result: MsgSendResult): void {
+  if (result.status === "ok") {
+    console.log(`Message sent: ${result.message_id}`);
+    if (result.event_id) {
+      console.log(`Event ID: ${result.event_id}`);
+    }
+  } else {
+    console.error(`Error: ${result.error}`);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// msg edit command (HTTP mutation)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface MsgEditOptions extends GlobalOptions {
+  messageId: string;
+  content: string;
+  expectedVersion?: number;
+}
+
+interface MsgEditResult {
+  status: "ok" | "error";
+  message?: any;
+  event_id?: number;
+  error?: string;
+  code?: string;
+  details?: Record<string, unknown>;
+}
+
+async function runMsgEdit(options: MsgEditOptions): Promise<MsgEditResult> {
+  try {
+    const ctx = await getHubContext(options.workspace);
+    if (!ctx) {
+      return {
+        status: "error",
+        error: "Hub not running (server.json not found)",
+        code: "HUB_NOT_RUNNING",
+      };
+    }
+
+    const result = await hubRequest<{ message: any; event_id: number }>(
+      ctx,
+      "PATCH",
+      `/api/v1/messages/${options.messageId}`,
+      {
+        op: "edit",
+        content_raw: options.content,
+        expected_version: options.expectedVersion,
+      }
+    );
+
+    if (!result.ok) {
+      return {
+        status: "error",
+        error: result.error,
+        code: result.code,
+        details: result.details,
+      };
+    }
+
+    return {
+      status: "ok",
+      message: result.data.message,
+      event_id: result.data.event_id,
+    };
+  } catch (err) {
+    return {
+      status: "error",
+      error: err instanceof Error ? err.message : String(err),
+      code: "INTERNAL_ERROR",
+    };
+  }
+}
+
+function printHumanMsgEdit(result: MsgEditResult): void {
+  if (result.status === "ok") {
+    console.log(`Message edited: ${result.message?.id}`);
+    if (result.event_id) {
+      console.log(`Event ID: ${result.event_id}`);
+    }
+  } else {
+    console.error(`Error: ${result.error}`);
+    if (result.code === "VERSION_CONFLICT" && result.details?.current) {
+      console.error(`  Current version: ${result.details.current}`);
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// msg delete command (HTTP mutation)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface MsgDeleteOptions extends GlobalOptions {
+  messageId: string;
+  actor: string;
+  expectedVersion?: number;
+}
+
+interface MsgDeleteResult {
+  status: "ok" | "error";
+  deleted?: boolean;
+  event_id?: number | null;
+  error?: string;
+  code?: string;
+  details?: Record<string, unknown>;
+}
+
+async function runMsgDelete(options: MsgDeleteOptions): Promise<MsgDeleteResult> {
+  try {
+    const ctx = await getHubContext(options.workspace);
+    if (!ctx) {
+      return {
+        status: "error",
+        error: "Hub not running (server.json not found)",
+        code: "HUB_NOT_RUNNING",
+      };
+    }
+
+    const result = await hubRequest<{ message: any; event_id: number | null }>(
+      ctx,
+      "PATCH",
+      `/api/v1/messages/${options.messageId}`,
+      {
+        op: "delete",
+        actor: options.actor,
+        expected_version: options.expectedVersion,
+      }
+    );
+
+    if (!result.ok) {
+      return {
+        status: "error",
+        error: result.error,
+        code: result.code,
+        details: result.details,
+      };
+    }
+
+    return {
+      status: "ok",
+      deleted: true,
+      event_id: result.data.event_id,
+    };
+  } catch (err) {
+    return {
+      status: "error",
+      error: err instanceof Error ? err.message : String(err),
+      code: "INTERNAL_ERROR",
+    };
+  }
+}
+
+function printHumanMsgDelete(result: MsgDeleteResult): void {
+  if (result.status === "ok") {
+    console.log("Message deleted");
+    if (result.event_id !== null && result.event_id !== undefined) {
+      console.log(`Event ID: ${result.event_id}`);
+    }
+  } else {
+    console.error(`Error: ${result.error}`);
+    if (result.code === "VERSION_CONFLICT" && result.details?.current) {
+      console.error(`  Current version: ${result.details.current}`);
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// msg retopic command (HTTP mutation)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface MsgRetopicOptions extends GlobalOptions {
+  messageId: string;
+  toTopicId: string;
+  mode: "one" | "later" | "all";
+  force?: boolean;
+  expectedVersion?: number;
+}
+
+interface MsgRetopicResult {
+  status: "ok" | "error";
+  affected_count?: number;
+  event_ids?: number[];
+  error?: string;
+  code?: string;
+  details?: Record<string, unknown>;
+}
+
+async function runMsgRetopic(options: MsgRetopicOptions): Promise<MsgRetopicResult> {
+  try {
+    // Safety check: mode=all requires --force
+    if (options.mode === "all" && !options.force) {
+      return {
+        status: "error",
+        error: "Mode 'all' requires --force flag",
+        code: "INVALID_INPUT",
+      };
+    }
+
+    const ctx = await getHubContext(options.workspace);
+    if (!ctx) {
+      return {
+        status: "error",
+        error: "Hub not running (server.json not found)",
+        code: "HUB_NOT_RUNNING",
+      };
+    }
+
+    const result = await hubRequest<{ affected_count: number; event_ids: number[] }>(
+      ctx,
+      "PATCH",
+      `/api/v1/messages/${options.messageId}`,
+      {
+        op: "move_topic",
+        to_topic_id: options.toTopicId,
+        mode: options.mode,
+        expected_version: options.expectedVersion,
+      }
+    );
+
+    if (!result.ok) {
+      return {
+        status: "error",
+        error: result.error,
+        code: result.code,
+        details: result.details,
+      };
+    }
+
+    return {
+      status: "ok",
+      affected_count: result.data.affected_count,
+      event_ids: result.data.event_ids,
+    };
+  } catch (err) {
+    return {
+      status: "error",
+      error: err instanceof Error ? err.message : String(err),
+      code: "INTERNAL_ERROR",
+    };
+  }
+}
+
+function printHumanMsgRetopic(result: MsgRetopicResult): void {
+  if (result.status === "ok") {
+    console.log(`Moved ${result.affected_count} message(s)`);
+    if (result.event_ids && result.event_ids.length > 0) {
+      console.log(`Event IDs: ${result.event_ids.join(", ")}`);
+    }
+  } else {
+    console.error(`Error: ${result.error}`);
+    if (result.code === "CROSS_CHANNEL_MOVE") {
+      console.error("  Cross-channel moves are not allowed");
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// topic rename command (HTTP mutation)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface TopicRenameOptions extends GlobalOptions {
+  topicId: string;
+  title: string;
+}
+
+interface TopicRenameResult {
+  status: "ok" | "error";
+  topic?: any;
+  event_id?: number;
+  error?: string;
+  code?: string;
+}
+
+async function runTopicRename(options: TopicRenameOptions): Promise<TopicRenameResult> {
+  try {
+    const ctx = await getHubContext(options.workspace);
+    if (!ctx) {
+      return {
+        status: "error",
+        error: "Hub not running (server.json not found)",
+        code: "HUB_NOT_RUNNING",
+      };
+    }
+
+    const result = await hubRequest<{ topic: any; event_id: number }>(
+      ctx,
+      "PATCH",
+      `/api/v1/topics/${options.topicId}`,
+      {
+        title: options.title,
+      }
+    );
+
+    if (!result.ok) {
+      return {
+        status: "error",
+        error: result.error,
+        code: result.code,
+      };
+    }
+
+    return {
+      status: "ok",
+      topic: result.data.topic,
+      event_id: result.data.event_id,
+    };
+  } catch (err) {
+    return {
+      status: "error",
+      error: err instanceof Error ? err.message : String(err),
+      code: "INTERNAL_ERROR",
+    };
+  }
+}
+
+function printHumanTopicRename(result: TopicRenameResult): void {
+  if (result.status === "ok") {
+    console.log(`Topic renamed: ${result.topic?.id}`);
+    console.log(`New title: ${result.topic?.title}`);
+    if (result.event_id) {
+      console.log(`Event ID: ${result.event_id}`);
+    }
+  } else {
+    console.error(`Error: ${result.error}`);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// attachment add command (HTTP mutation)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface AttachmentAddOptions extends GlobalOptions {
+  topicId: string;
+  kind: string;
+  valueJson: string;
+  key?: string;
+  sourceMessageId?: string;
+  dedupeKey?: string;
+}
+
+interface AttachmentAddResult {
+  status: "ok" | "error";
+  attachment?: any;
+  event_id?: number | null;
+  deduplicated?: boolean;
+  error?: string;
+  code?: string;
+}
+
+async function runAttachmentAdd(options: AttachmentAddOptions): Promise<AttachmentAddResult> {
+  try {
+    // Parse value_json
+    let valueJson: Record<string, unknown>;
+    try {
+      valueJson = JSON.parse(options.valueJson);
+      if (typeof valueJson !== "object" || Array.isArray(valueJson)) {
+        return {
+          status: "error",
+          error: "value_json must be a JSON object",
+          code: "INVALID_INPUT",
+        };
+      }
+    } catch {
+      return {
+        status: "error",
+        error: "value_json is not valid JSON",
+        code: "INVALID_INPUT",
+      };
+    }
+
+    const ctx = await getHubContext(options.workspace);
+    if (!ctx) {
+      return {
+        status: "error",
+        error: "Hub not running (server.json not found)",
+        code: "HUB_NOT_RUNNING",
+      };
+    }
+
+    const body: Record<string, unknown> = {
+      kind: options.kind,
+      value_json: valueJson,
+    };
+    if (options.key) body.key = options.key;
+    if (options.sourceMessageId) body.source_message_id = options.sourceMessageId;
+    if (options.dedupeKey) body.dedupe_key = options.dedupeKey;
+
+    const result = await hubRequest<{ attachment: any; event_id: number | null }>(
+      ctx,
+      "POST",
+      `/api/v1/topics/${options.topicId}/attachments`,
+      body
+    );
+
+    if (!result.ok) {
+      return {
+        status: "error",
+        error: result.error,
+        code: result.code,
+      };
+    }
+
+    return {
+      status: "ok",
+      attachment: result.data.attachment,
+      event_id: result.data.event_id,
+      deduplicated: result.data.event_id === null,
+    };
+  } catch (err) {
+    return {
+      status: "error",
+      error: err instanceof Error ? err.message : String(err),
+      code: "INTERNAL_ERROR",
+    };
+  }
+}
+
+function printHumanAttachmentAdd(result: AttachmentAddResult): void {
+  if (result.status === "ok") {
+    if (result.deduplicated) {
+      console.log(`Attachment already exists: ${result.attachment?.id}`);
+      console.log("(deduplicated, no new event)");
+    } else {
+      console.log(`Attachment added: ${result.attachment?.id}`);
+      if (result.event_id) {
+        console.log(`Event ID: ${result.event_id}`);
+      }
+    }
+  } else {
+    console.error(`Error: ${result.error}`);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // listen command (WebSocket event stream)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -562,6 +1080,142 @@ async function readServerJson(workspaceRoot: string): Promise<ServerJsonData | n
       return null;
     }
     throw err;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HTTP API helpers (for mutations)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface HubContext {
+  baseUrl: string;
+  authToken: string;
+}
+
+/**
+ * Get hub context (baseUrl + authToken) by reading server.json.
+ * Returns null if hub is not running.
+ */
+async function getHubContext(workspace?: string): Promise<HubContext | null> {
+  const startPath = workspace ?? process.cwd();
+  const discovered = await discoverWorkspaceRoot(startPath);
+  if (!discovered) {
+    return null;
+  }
+
+  const serverJson = await readServerJson(discovered.root);
+  if (!serverJson) {
+    return null;
+  }
+
+  const baseUrl = `http://${serverJson.host}:${serverJson.port}`;
+  return {
+    baseUrl,
+    authToken: serverJson.auth_token,
+  };
+}
+
+/**
+ * Make authenticated HTTP request to hub.
+ * Returns parsed JSON response.
+ */
+async function hubRequest<T = unknown>(
+  ctx: HubContext,
+  method: string,
+  path: string,
+  body?: unknown
+): Promise<{ ok: true; data: T; status: number } | { ok: false; error: string; code: string; status: number; details?: Record<string, unknown> }> {
+  try {
+    const url = `${ctx.baseUrl}${path}`;
+    const headers: Record<string, string> = {
+      "Authorization": `Bearer ${ctx.authToken}`,
+    };
+
+    let requestInit: RequestInit = { method, headers };
+
+    if (body !== undefined) {
+      headers["Content-Type"] = "application/json";
+      requestInit.body = JSON.stringify(body);
+    }
+
+    const response = await fetch(url, requestInit);
+    const text = await response.text();
+
+    // Try to parse as JSON
+    let json: any;
+    try {
+      json = text ? JSON.parse(text) : {};
+    } catch {
+      // Not JSON - treat as plain error
+      return {
+        ok: false,
+        error: text || "Unknown error",
+        code: "INTERNAL_ERROR",
+        status: response.status,
+      };
+    }
+
+    if (response.ok) {
+      return { ok: true, data: json as T, status: response.status };
+    }
+
+    // Error response - extract error/code/details
+    const errorMsg = json.error || json.message || "Unknown error";
+    const errorCode = json.code || "INTERNAL_ERROR";
+    const details = json.details;
+
+    return {
+      ok: false,
+      error: errorMsg,
+      code: errorCode,
+      status: response.status,
+      details,
+    };
+  } catch (err) {
+    // Network error
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+      code: "CONNECTION_FAILED",
+      status: 0,
+    };
+  }
+}
+
+/**
+ * Handle error response and exit with appropriate code.
+ */
+function handleMutationError(error: {
+  error: string;
+  code: string;
+  status: number;
+  details?: Record<string, unknown>;
+}, json: boolean): never {
+  if (json) {
+    // Output as JSON error
+    console.log(JSON.stringify({
+      status: "error",
+      error: error.error,
+      code: error.code,
+      details: error.details,
+    }));
+  } else {
+    // Human-readable error to stderr
+    console.error(`Error: ${error.error}`);
+    if (error.code === "VERSION_CONFLICT" && error.details?.current) {
+      console.error(`  Current version: ${error.details.current}`);
+    }
+  }
+
+  // Exit with appropriate code per plan
+  if (error.code === "VERSION_CONFLICT") {
+    process.exit(2); // Conflict
+  } else if (error.code === "CONNECTION_FAILED" || error.code === "HUB_NOT_RUNNING") {
+    process.exit(3); // Hub not running
+  } else if (error.code === "UNAUTHORIZED") {
+    process.exit(4); // Auth failed
+  } else {
+    process.exit(1); // General error
   }
 }
 
@@ -891,13 +1545,19 @@ function printChannelHelp(): void {
 function printTopicHelp(): void {
   console.log("Usage: agentchat topic <subcommand> [options]");
   console.log();
-  console.log("Subcommands:");
-  console.log("  list    List topics in a channel");
+  console.log("Subcommands (read-only):");
+  console.log("  list      List topics in a channel");
   console.log();
-  console.log("Usage: agentchat topic list --channel-id <id> [--limit N] [--offset N]");
+  console.log("Subcommands (mutations, require running hub):");
+  console.log("  rename    Rename a topic");
+  console.log();
+  console.log("Usage:");
+  console.log("  agentchat topic list --channel-id <id> [--limit N] [--offset N]");
+  console.log("  agentchat topic rename <topic_id> --title <new_title>");
   console.log();
   console.log("Options:");
-  console.log("  --channel-id <id>   Channel ID (required)");
+  console.log("  --channel-id <id>   Channel ID (required for list)");
+  console.log("  --title <title>     New topic title (required for rename)");
   console.log("  --limit <n>         Max topics to return (default: 50)");
   console.log("  --offset <n>        Offset for pagination (default: 0)");
   console.log("  --workspace <path>  Explicit workspace root");
@@ -908,37 +1568,75 @@ function printTopicHelp(): void {
 function printMsgHelp(): void {
   console.log("Usage: agentchat msg <subcommand> [options]");
   console.log();
-  console.log("Subcommands:");
-  console.log("  tail    Get latest messages from a topic");
-  console.log("  page    Paginate messages with cursor");
+  console.log("Subcommands (read-only):");
+  console.log("  tail      Get latest messages from a topic");
+  console.log("  page      Paginate messages with cursor");
   console.log();
-  console.log("Usage: agentchat msg tail --topic-id <id> [--limit N]");
-  console.log("       agentchat msg page --topic-id <id> [--before-id <id>] [--after-id <id>] [--limit N]");
+  console.log("Subcommands (mutations, require running hub):");
+  console.log("  send      Send a message");
+  console.log("  edit      Edit a message");
+  console.log("  delete    Delete a message (tombstone)");
+  console.log("  retopic   Move message(s) to different topic");
+  console.log();
+  console.log("Read-only usage:");
+  console.log("  agentchat msg tail --topic-id <id> [--limit N]");
+  console.log("  agentchat msg page --topic-id <id> [--before-id <id>] [--after-id <id>] [--limit N]");
+  console.log();
+  console.log("Mutation usage:");
+  console.log("  agentchat msg send --topic-id <id> --sender <name> [--content <text>] [--stdin]");
+  console.log("  agentchat msg edit <message_id> --content <text> [--expected-version <n>]");
+  console.log("  agentchat msg delete <message_id> --actor <name> [--expected-version <n>]");
+  console.log("  agentchat msg retopic <message_id> --to-topic-id <id> --mode <one|later|all> [--force]");
   console.log();
   console.log("Options:");
-  console.log("  --topic-id <id>     Topic ID (required)");
-  console.log("  --before-id <id>    Get messages before this ID (page command)");
-  console.log("  --after-id <id>     Get messages after this ID (page command)");
-  console.log("  --limit <n>         Max messages to return (default: 50)");
-  console.log("  --workspace <path>  Explicit workspace root");
-  console.log("  --json              Output as JSON");
-  console.log("  --help, -h          Show this help");
+  console.log("  --topic-id <id>       Topic ID (required for tail/page/send)");
+  console.log("  --sender <name>       Sender name (required for send)");
+  console.log("  --content <text>      Message content (send/edit)");
+  console.log("  --stdin               Read content from stdin (send only)");
+  console.log("  --actor <name>        Actor performing delete (required for delete)");
+  console.log("  --expected-version <n> Expected version for optimistic locking");
+  console.log("  --to-topic-id <id>    Target topic for retopic");
+  console.log("  --mode <mode>         Retopic mode: one, later, or all");
+  console.log("  --force               Required for retopic mode=all");
+  console.log("  --before-id <id>      Get messages before this ID (page command)");
+  console.log("  --after-id <id>       Get messages after this ID (page command)");
+  console.log("  --limit <n>           Max messages to return (default: 50)");
+  console.log("  --workspace <path>    Explicit workspace root");
+  console.log("  --json                Output as JSON");
+  console.log("  --help, -h            Show this help");
+  console.log();
+  console.log("Exit codes:");
+  console.log("  0  Success");
+  console.log("  1  General error");
+  console.log("  2  Version conflict (optimistic lock failed)");
+  console.log("  3  Hub not running");
+  console.log("  4  Authentication failed");
 }
 
 function printAttachmentHelp(): void {
   console.log("Usage: agentchat attachment <subcommand> [options]");
   console.log();
-  console.log("Subcommands:");
+  console.log("Subcommands (read-only):");
   console.log("  list    List attachments for a topic");
   console.log();
-  console.log("Usage: agentchat attachment list --topic-id <id> [--kind <kind>]");
+  console.log("Subcommands (mutations, require running hub):");
+  console.log("  add     Add an attachment to a topic");
+  console.log();
+  console.log("Usage:");
+  console.log("  agentchat attachment list --topic-id <id> [--kind <kind>]");
+  console.log("  agentchat attachment add --topic-id <id> --kind <kind> --value-json <json>");
+  console.log("      [--key <key>] [--source-message-id <id>] [--dedupe-key <key>]");
   console.log();
   console.log("Options:");
-  console.log("  --topic-id <id>     Topic ID (required)");
-  console.log("  --kind <kind>       Filter by attachment kind");
-  console.log("  --workspace <path>  Explicit workspace root");
-  console.log("  --json              Output as JSON");
-  console.log("  --help, -h          Show this help");
+  console.log("  --topic-id <id>           Topic ID (required)");
+  console.log("  --kind <kind>             Attachment kind (required for add, filter for list)");
+  console.log("  --value-json <json>       JSON value (required for add)");
+  console.log("  --key <key>               Optional key for namespacing");
+  console.log("  --source-message-id <id>  Source message ID");
+  console.log("  --dedupe-key <key>        Custom deduplication key");
+  console.log("  --workspace <path>        Explicit workspace root");
+  console.log("  --json                    Output as JSON");
+  console.log("  --help, -h                Show this help");
 }
 
 function printSearchHelp(): void {
@@ -1072,6 +1770,40 @@ export async function main(argv: string[] = process.argv.slice(2)) {
       process.exit(result.status === "ok" ? 0 : 1);
     }
     
+    if (subcommand === "rename") {
+      if (subArgs.includes("--help") || subArgs.includes("-h")) {
+        printTopicHelp();
+        process.exit(0);
+      }
+      
+      const [topicId, ...renameArgs] = subArgs;
+      if (!topicId) {
+        console.error("<topic_id> is required");
+        process.exit(1);
+      }
+      
+      let title: string | undefined;
+      
+      for (let i = 0; i < renameArgs.length; i++) {
+        const arg = renameArgs[i];
+        if (arg === "--title") {
+          title = renameArgs[++i];
+        }
+      }
+      
+      if (!title) {
+        console.error("--title is required");
+        process.exit(1);
+      }
+      
+      const result = await runTopicRename({ ...globalOpts, topicId, title });
+      if (result.status === "error" && result.code) {
+        handleMutationError({ error: result.error!, code: result.code, status: 400 }, globalOpts.json ?? false);
+      }
+      output(result, globalOpts.json ?? false, () => printHumanTopicRename(result));
+      process.exit(result.status === "ok" ? 0 : 1);
+    }
+    
     console.error(`Unknown topic subcommand: ${subcommand}`);
     process.exit(1);
   }
@@ -1147,6 +1879,173 @@ export async function main(argv: string[] = process.argv.slice(2)) {
       process.exit(result.status === "ok" ? 0 : 1);
     }
     
+    if (subcommand === "send") {
+      if (subArgs.includes("--help") || subArgs.includes("-h")) {
+        printMsgHelp();
+        process.exit(0);
+      }
+      
+      let topicId: string | undefined;
+      let sender: string | undefined;
+      let content: string | undefined;
+      let stdin = false;
+      
+      for (let i = 0; i < subArgs.length; i++) {
+        const arg = subArgs[i];
+        if (arg === "--topic-id") {
+          topicId = subArgs[++i];
+        } else if (arg === "--sender") {
+          sender = subArgs[++i];
+        } else if (arg === "--content") {
+          content = subArgs[++i];
+        } else if (arg === "--stdin") {
+          stdin = true;
+        }
+      }
+      
+      if (!topicId) {
+        console.error("--topic-id is required");
+        process.exit(1);
+      }
+      if (!sender) {
+        console.error("--sender is required");
+        process.exit(1);
+      }
+      
+      const result = await runMsgSend({ ...globalOpts, topicId, sender, content, stdin });
+      if (result.status === "error" && result.code) {
+        handleMutationError({ error: result.error!, code: result.code, status: 400 }, globalOpts.json ?? false);
+      }
+      output(result, globalOpts.json ?? false, () => printHumanMsgSend(result));
+      process.exit(result.status === "ok" ? 0 : 1);
+    }
+    
+    if (subcommand === "edit") {
+      if (subArgs.includes("--help") || subArgs.includes("-h")) {
+        printMsgHelp();
+        process.exit(0);
+      }
+      
+      const [messageId, ...editArgs] = subArgs;
+      if (!messageId) {
+        console.error("<message_id> is required");
+        process.exit(1);
+      }
+      
+      let content: string | undefined;
+      let expectedVersion: number | undefined;
+      
+      for (let i = 0; i < editArgs.length; i++) {
+        const arg = editArgs[i];
+        if (arg === "--content") {
+          content = editArgs[++i];
+        } else if (arg === "--expected-version") {
+          expectedVersion = parseInt(editArgs[++i], 10);
+        }
+      }
+      
+      if (!content) {
+        console.error("--content is required");
+        process.exit(1);
+      }
+      
+      const result = await runMsgEdit({ ...globalOpts, messageId, content, expectedVersion });
+      if (result.status === "error" && result.code) {
+        handleMutationError({ error: result.error!, code: result.code, status: 400, details: result.details }, globalOpts.json ?? false);
+      }
+      output(result, globalOpts.json ?? false, () => printHumanMsgEdit(result));
+      process.exit(result.status === "ok" ? 0 : 1);
+    }
+    
+    if (subcommand === "delete") {
+      if (subArgs.includes("--help") || subArgs.includes("-h")) {
+        printMsgHelp();
+        process.exit(0);
+      }
+      
+      const [messageId, ...deleteArgs] = subArgs;
+      if (!messageId) {
+        console.error("<message_id> is required");
+        process.exit(1);
+      }
+      
+      let actor: string | undefined;
+      let expectedVersion: number | undefined;
+      
+      for (let i = 0; i < deleteArgs.length; i++) {
+        const arg = deleteArgs[i];
+        if (arg === "--actor") {
+          actor = deleteArgs[++i];
+        } else if (arg === "--expected-version") {
+          expectedVersion = parseInt(deleteArgs[++i], 10);
+        }
+      }
+      
+      if (!actor) {
+        console.error("--actor is required");
+        process.exit(1);
+      }
+      
+      const result = await runMsgDelete({ ...globalOpts, messageId, actor, expectedVersion });
+      if (result.status === "error" && result.code) {
+        handleMutationError({ error: result.error!, code: result.code, status: 400, details: result.details }, globalOpts.json ?? false);
+      }
+      output(result, globalOpts.json ?? false, () => printHumanMsgDelete(result));
+      process.exit(result.status === "ok" ? 0 : 1);
+    }
+    
+    if (subcommand === "retopic") {
+      if (subArgs.includes("--help") || subArgs.includes("-h")) {
+        printMsgHelp();
+        process.exit(0);
+      }
+      
+      const [messageId, ...retopicArgs] = subArgs;
+      if (!messageId) {
+        console.error("<message_id> is required");
+        process.exit(1);
+      }
+      
+      let toTopicId: string | undefined;
+      let mode: "one" | "later" | "all" | undefined;
+      let force = false;
+      let expectedVersion: number | undefined;
+      
+      for (let i = 0; i < retopicArgs.length; i++) {
+        const arg = retopicArgs[i];
+        if (arg === "--to-topic-id") {
+          toTopicId = retopicArgs[++i];
+        } else if (arg === "--mode") {
+          const modeStr = retopicArgs[++i];
+          if (!["one", "later", "all"].includes(modeStr)) {
+            console.error("--mode must be one of: one, later, all");
+            process.exit(1);
+          }
+          mode = modeStr as "one" | "later" | "all";
+        } else if (arg === "--force") {
+          force = true;
+        } else if (arg === "--expected-version") {
+          expectedVersion = parseInt(retopicArgs[++i], 10);
+        }
+      }
+      
+      if (!toTopicId) {
+        console.error("--to-topic-id is required");
+        process.exit(1);
+      }
+      if (!mode) {
+        console.error("--mode is required");
+        process.exit(1);
+      }
+      
+      const result = await runMsgRetopic({ ...globalOpts, messageId, toTopicId, mode, force, expectedVersion });
+      if (result.status === "error" && result.code) {
+        handleMutationError({ error: result.error!, code: result.code, status: 400, details: result.details }, globalOpts.json ?? false);
+      }
+      output(result, globalOpts.json ?? false, () => printHumanMsgRetopic(result));
+      process.exit(result.status === "ok" ? 0 : 1);
+    }
+    
     console.error(`Unknown msg subcommand: ${subcommand}`);
     process.exit(1);
   }
@@ -1185,6 +2084,65 @@ export async function main(argv: string[] = process.argv.slice(2)) {
       
       const result = await runAttachmentList({ ...globalOpts, topicId, kind });
       output(result, globalOpts.json ?? false, () => printHumanAttachmentList(result));
+      process.exit(result.status === "ok" ? 0 : 1);
+    }
+    
+    if (subcommand === "add") {
+      if (subArgs.includes("--help") || subArgs.includes("-h")) {
+        printAttachmentHelp();
+        process.exit(0);
+      }
+      
+      let topicId: string | undefined;
+      let kind: string | undefined;
+      let valueJson: string | undefined;
+      let key: string | undefined;
+      let sourceMessageId: string | undefined;
+      let dedupeKey: string | undefined;
+      
+      for (let i = 0; i < subArgs.length; i++) {
+        const arg = subArgs[i];
+        if (arg === "--topic-id") {
+          topicId = subArgs[++i];
+        } else if (arg === "--kind") {
+          kind = subArgs[++i];
+        } else if (arg === "--value-json") {
+          valueJson = subArgs[++i];
+        } else if (arg === "--key") {
+          key = subArgs[++i];
+        } else if (arg === "--source-message-id") {
+          sourceMessageId = subArgs[++i];
+        } else if (arg === "--dedupe-key") {
+          dedupeKey = subArgs[++i];
+        }
+      }
+      
+      if (!topicId) {
+        console.error("--topic-id is required");
+        process.exit(1);
+      }
+      if (!kind) {
+        console.error("--kind is required");
+        process.exit(1);
+      }
+      if (!valueJson) {
+        console.error("--value-json is required");
+        process.exit(1);
+      }
+      
+      const result = await runAttachmentAdd({ 
+        ...globalOpts, 
+        topicId, 
+        kind, 
+        valueJson, 
+        key, 
+        sourceMessageId, 
+        dedupeKey 
+      });
+      if (result.status === "error" && result.code) {
+        handleMutationError({ error: result.error!, code: result.code, status: 400 }, globalOpts.json ?? false);
+      }
+      output(result, globalOpts.json ?? false, () => printHumanAttachmentAdd(result));
       process.exit(result.status === "ok" ? 0 : 1);
     }
     

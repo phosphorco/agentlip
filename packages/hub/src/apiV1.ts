@@ -109,7 +109,9 @@ function versionConflictResponse(error: VersionConflictError): Response {
     JSON.stringify({
       error: error.message,
       code: "VERSION_CONFLICT",
-      current_version: error.currentVersion,
+      details: {
+        current: error.currentVersion,
+      },
     }),
     {
       status: 409,

@@ -971,3 +971,481 @@ describe("listen command (live WS)", () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mutation command tests (HTTP API integration)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("mutation commands (HTTP)", () => {
+  const skipLiveTests = process.env.SKIP_LIVE_WS_TESTS === "1";
+
+  test.skipIf(skipLiveTests)("msg send creates a message via HTTP API", async () => {
+    let createTempWorkspace: typeof import("@agentchat/hub/test-harness").createTempWorkspace;
+    let startTestHub: typeof import("@agentchat/hub/test-harness").startTestHub;
+
+    try {
+      const harness = await import("@agentchat/hub/test-harness");
+      createTempWorkspace = harness.createTempWorkspace;
+      startTestHub = harness.startTestHub;
+    } catch {
+      console.log("Skipping mutation test: hub harness not available");
+      return;
+    }
+
+    const ws = await createTempWorkspace();
+    const hub = await startTestHub({
+      workspaceRoot: ws.root,
+      authToken: "test-token",
+    });
+    
+    try {
+      // Create channel + topic
+      const channelRes = await fetch(`${hub.url}/api/v1/channels`, {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer test-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: "test", description: "Test channel" }),
+      });
+      const channelData = await channelRes.json() as { channel: { id: string } };
+      const channelId = channelData.channel.id;
+      
+      const topicRes = await fetch(`${hub.url}/api/v1/topics`, {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer test-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ channel_id: channelId, title: "Test Topic" }),
+      });
+      const topicData = await topicRes.json() as { topic: { id: string } };
+      const topicId = topicData.topic.id;
+      
+      // Send message
+      const msgRes = await fetch(`${hub.url}/api/v1/messages`, {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer test-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          topic_id: topicId,
+          sender: "test-agent",
+          content_raw: "Hello from test",
+        }),
+      });
+      
+      expect(msgRes.status).toBe(201);
+      const msgData = await msgRes.json() as { message: any; event_id: number };
+      expect(msgData.message).toBeDefined();
+      expect(msgData.message.content_raw).toBe("Hello from test");
+      expect(msgData.event_id).toBeGreaterThan(0);
+      
+      // Verify in DB
+      const { db } = await openWorkspaceDbReadonly({ workspace: ws.root });
+      try {
+        const dbMsg = db.query("SELECT * FROM messages WHERE id = ?").get(msgData.message.id);
+        expect(dbMsg).toBeDefined();
+      } finally {
+        db.close();
+      }
+    } finally {
+      await hub.stop();
+      await ws.cleanup();
+    }
+  });
+
+  test.skipIf(skipLiveTests)("msg edit updates message with version tracking", async () => {
+    let createTempWorkspace: typeof import("@agentchat/hub/test-harness").createTempWorkspace;
+    let startTestHub: typeof import("@agentchat/hub/test-harness").startTestHub;
+
+    try {
+      const harness = await import("@agentchat/hub/test-harness");
+      createTempWorkspace = harness.createTempWorkspace;
+      startTestHub = harness.startTestHub;
+    } catch {
+      console.log("Skipping mutation test: hub harness not available");
+      return;
+    }
+
+    const ws = await createTempWorkspace();
+    const hub = await startTestHub({
+      workspaceRoot: ws.root,
+      authToken: "test-token",
+    });
+    
+    try {
+      // Create channel + topic + message
+      const channelRes = await fetch(`${hub.url}/api/v1/channels`, {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer test-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: "test" }),
+      });
+      const { channel } = await channelRes.json() as { channel: { id: string } };
+      
+      const topicRes = await fetch(`${hub.url}/api/v1/topics`, {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer test-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ channel_id: channel.id, title: "Topic" }),
+      });
+      const { topic } = await topicRes.json() as { topic: { id: string } };
+      
+      const msgRes = await fetch(`${hub.url}/api/v1/messages`, {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer test-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          topic_id: topic.id,
+          sender: "agent",
+          content_raw: "Original",
+        }),
+      });
+      const { message } = await msgRes.json() as { message: { id: string; version: number } };
+      
+      // Edit message
+      const editRes = await fetch(`${hub.url}/api/v1/messages/${message.id}`, {
+        method: "PATCH",
+        headers: {
+          "Authorization": "Bearer test-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          op: "edit",
+          content_raw: "Updated",
+        }),
+      });
+      
+      expect(editRes.status).toBe(200);
+      const editData = await editRes.json() as { message: any };
+      expect(editData.message.content_raw).toBe("Updated");
+      expect(editData.message.version).toBe(2);
+      expect(editData.message.edited_at).toBeDefined();
+    } finally {
+      await hub.stop();
+      await ws.cleanup();
+    }
+  });
+
+  test.skipIf(skipLiveTests)("msg edit returns VERSION_CONFLICT with details when version mismatches", async () => {
+    let createTempWorkspace: typeof import("@agentchat/hub/test-harness").createTempWorkspace;
+    let startTestHub: typeof import("@agentchat/hub/test-harness").startTestHub;
+
+    try {
+      const harness = await import("@agentchat/hub/test-harness");
+      createTempWorkspace = harness.createTempWorkspace;
+      startTestHub = harness.startTestHub;
+    } catch {
+      console.log("Skipping mutation test: hub harness not available");
+      return;
+    }
+
+    const ws = await createTempWorkspace();
+    const hub = await startTestHub({
+      workspaceRoot: ws.root,
+      authToken: "test-token",
+    });
+    
+    try {
+      // Create message
+      const channelRes = await fetch(`${hub.url}/api/v1/channels`, {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer test-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: "test" }),
+      });
+      const { channel } = await channelRes.json() as { channel: { id: string } };
+      
+      const topicRes = await fetch(`${hub.url}/api/v1/topics`, {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer test-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ channel_id: channel.id, title: "Topic" }),
+      });
+      const { topic } = await topicRes.json() as { topic: { id: string } };
+      
+      const msgRes = await fetch(`${hub.url}/api/v1/messages`, {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer test-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          topic_id: topic.id,
+          sender: "agent",
+          content_raw: "Original",
+        }),
+      });
+      const { message } = await msgRes.json() as { message: { id: string } };
+      
+      // Edit with wrong expected_version
+      const editRes = await fetch(`${hub.url}/api/v1/messages/${message.id}`, {
+        method: "PATCH",
+        headers: {
+          "Authorization": "Bearer test-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          op: "edit",
+          content_raw: "Updated",
+          expected_version: 99, // Wrong version
+        }),
+      });
+      
+      expect(editRes.status).toBe(409);
+      const errorData = await editRes.json() as { code: string; details: { current: number } };
+      expect(errorData.code).toBe("VERSION_CONFLICT");
+      expect(errorData.details).toBeDefined();
+      expect(errorData.details.current).toBe(1);
+    } finally {
+      await hub.stop();
+      await ws.cleanup();
+    }
+  });
+
+  test.skipIf(skipLiveTests)("msg delete tombstones message", async () => {
+    let createTempWorkspace: typeof import("@agentchat/hub/test-harness").createTempWorkspace;
+    let startTestHub: typeof import("@agentchat/hub/test-harness").startTestHub;
+
+    try {
+      const harness = await import("@agentchat/hub/test-harness");
+      createTempWorkspace = harness.createTempWorkspace;
+      startTestHub = harness.startTestHub;
+    } catch {
+      console.log("Skipping mutation test: hub harness not available");
+      return;
+    }
+
+    const ws = await createTempWorkspace();
+    const hub = await startTestHub({
+      workspaceRoot: ws.root,
+      authToken: "test-token",
+    });
+    
+    try {
+      // Create message
+      const channelRes = await fetch(`${hub.url}/api/v1/channels`, {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer test-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: "test" }),
+      });
+      const { channel } = await channelRes.json() as { channel: { id: string } };
+      
+      const topicRes = await fetch(`${hub.url}/api/v1/topics`, {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer test-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ channel_id: channel.id, title: "Topic" }),
+      });
+      const { topic } = await topicRes.json() as { topic: { id: string } };
+      
+      const msgRes = await fetch(`${hub.url}/api/v1/messages`, {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer test-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          topic_id: topic.id,
+          sender: "agent",
+          content_raw: "To delete",
+        }),
+      });
+      const { message } = await msgRes.json() as { message: { id: string } };
+      
+      // Delete message
+      const deleteRes = await fetch(`${hub.url}/api/v1/messages/${message.id}`, {
+        method: "PATCH",
+        headers: {
+          "Authorization": "Bearer test-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          op: "delete",
+          actor: "admin",
+        }),
+      });
+      
+      expect(deleteRes.status).toBe(200);
+      const deleteData = await deleteRes.json() as { message: any };
+      expect(deleteData.message.deleted_at).toBeDefined();
+      expect(deleteData.message.deleted_by).toBe("admin");
+      
+      // Verify tombstone in DB
+      const { db } = await openWorkspaceDbReadonly({ workspace: ws.root });
+      try {
+        const dbMsg = db.query("SELECT * FROM messages WHERE id = ?").get(message.id) as any;
+        expect(dbMsg.deleted_at).toBeDefined();
+      } finally {
+        db.close();
+      }
+    } finally {
+      await hub.stop();
+      await ws.cleanup();
+    }
+  });
+
+  test.skipIf(skipLiveTests)("topic rename updates title and emits event", async () => {
+    let createTempWorkspace: typeof import("@agentchat/hub/test-harness").createTempWorkspace;
+    let startTestHub: typeof import("@agentchat/hub/test-harness").startTestHub;
+
+    try {
+      const harness = await import("@agentchat/hub/test-harness");
+      createTempWorkspace = harness.createTempWorkspace;
+      startTestHub = harness.startTestHub;
+    } catch {
+      console.log("Skipping mutation test: hub harness not available");
+      return;
+    }
+
+    const ws = await createTempWorkspace();
+    const hub = await startTestHub({
+      workspaceRoot: ws.root,
+      authToken: "test-token",
+    });
+    
+    try {
+      // Create channel + topic
+      const channelRes = await fetch(`${hub.url}/api/v1/channels`, {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer test-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: "test" }),
+      });
+      const { channel } = await channelRes.json() as { channel: { id: string } };
+      
+      const topicRes = await fetch(`${hub.url}/api/v1/topics`, {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer test-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ channel_id: channel.id, title: "Old Title" }),
+      });
+      const { topic } = await topicRes.json() as { topic: { id: string } };
+      
+      // Rename topic
+      const renameRes = await fetch(`${hub.url}/api/v1/topics/${topic.id}`, {
+        method: "PATCH",
+        headers: {
+          "Authorization": "Bearer test-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ title: "New Title" }),
+      });
+      
+      expect(renameRes.status).toBe(200);
+      const renameData = await renameRes.json() as { topic: any; event_id: number };
+      expect(renameData.topic.title).toBe("New Title");
+      expect(renameData.event_id).toBeGreaterThan(0);
+    } finally {
+      await hub.stop();
+      await ws.cleanup();
+    }
+  });
+
+  test.skipIf(skipLiveTests)("attachment add creates attachment with deduplication", async () => {
+    let createTempWorkspace: typeof import("@agentchat/hub/test-harness").createTempWorkspace;
+    let startTestHub: typeof import("@agentchat/hub/test-harness").startTestHub;
+
+    try {
+      const harness = await import("@agentchat/hub/test-harness");
+      createTempWorkspace = harness.createTempWorkspace;
+      startTestHub = harness.startTestHub;
+    } catch {
+      console.log("Skipping mutation test: hub harness not available");
+      return;
+    }
+
+    const ws = await createTempWorkspace();
+    const hub = await startTestHub({
+      workspaceRoot: ws.root,
+      authToken: "test-token",
+    });
+    
+    try {
+      // Create channel + topic
+      const channelRes = await fetch(`${hub.url}/api/v1/channels`, {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer test-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: "test" }),
+      });
+      const { channel } = await channelRes.json() as { channel: { id: string } };
+      
+      const topicRes = await fetch(`${hub.url}/api/v1/topics`, {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer test-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ channel_id: channel.id, title: "Topic" }),
+      });
+      const { topic } = await topicRes.json() as { topic: { id: string } };
+      
+      const valueJson = { url: "https://example.com", title: "Example" };
+      
+      // Add attachment first time
+      const addRes1 = await fetch(`${hub.url}/api/v1/topics/${topic.id}/attachments`, {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer test-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          kind: "url",
+          value_json: valueJson,
+        }),
+      });
+      
+      expect(addRes1.status).toBe(201);
+      const addData1 = await addRes1.json() as { attachment: any; event_id: number };
+      expect(addData1.attachment.kind).toBe("url");
+      expect(addData1.event_id).toBeGreaterThan(0);
+      
+      // Add same attachment again (should dedupe)
+      const addRes2 = await fetch(`${hub.url}/api/v1/topics/${topic.id}/attachments`, {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer test-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          kind: "url",
+          value_json: valueJson,
+        }),
+      });
+      
+      expect(addRes2.status).toBe(200);
+      const addData2 = await addRes2.json() as { attachment: any; event_id: number | null };
+      expect(addData2.attachment.id).toBe(addData1.attachment.id); // Same attachment
+      expect(addData2.event_id).toBeNull(); // No new event
+    } finally {
+      await hub.stop();
+      await ws.cleanup();
+    }
+  });
+});

@@ -15,6 +15,14 @@ import {
   type RateLimiterConfig,
 } from "./rateLimiter";
 import { readJsonBody, SIZE_LIMITS } from "./bodyParser";
+import { acquireWriterLock, releaseWriterLock } from "./lock";
+import {
+  writeServerJson,
+  readServerJson,
+  removeServerJson,
+  type ServerJsonData,
+} from "./serverJson";
+import { generateAuthToken } from "./authToken";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Structured JSON logger
@@ -137,9 +145,17 @@ export interface StartHubOptions {
   schemaVersion?: number;
   /** SQLite db file path. Defaults to in-memory (":memory:") for tests. */
   dbPath?: string;
+  /** 
+   * Workspace root directory (enables daemon mode).
+   * When provided, hub will:
+   * - Acquire writer lock (.zulip/locks/writer.lock)
+   * - Write server.json (.zulip/server.json with mode 0600)
+   * - Clean up on shutdown (remove lock + server.json)
+   */
+  workspaceRoot?: string;
   /** Directory containing SQL migrations (defaults to repo migrations/). */
   migrationsDir?: string;
-  /** Enable optional FTS5 migration (opportunistic, non-fatal). */
+  /** Enable optional FTS5 migration (opportunistic, non-fatal). If undefined, uses AGENTCHAT_ENABLE_FTS env var (1=enabled, 0=disabled). Default: false. */
   enableFts?: boolean;
   allowUnsafeNetwork?: boolean;
   /** Auth token for mutation endpoints + WS. If not provided, mutations are rejected. */
@@ -204,11 +220,36 @@ export function assertLocalhostBind(
 }
 
 /**
+ * Resolve FTS enablement from options or environment variable.
+ * 
+ * Precedence:
+ * 1. Explicit enableFts parameter (if provided)
+ * 2. AGENTCHAT_ENABLE_FTS env var (1=enabled, 0=disabled)
+ * 3. Default: false
+ */
+function resolveFtsEnabled(enableFts?: boolean): boolean {
+  if (enableFts !== undefined) {
+    return enableFts;
+  }
+  
+  const envValue = process.env.AGENTCHAT_ENABLE_FTS;
+  if (envValue === "1") return true;
+  if (envValue === "0") return false;
+  
+  return false;
+}
+
+/**
  * Start the AgentChat hub HTTP server.
  * 
  * Implements:
  * - GET /health endpoint (unauthenticated, always returns 200 when responsive)
  * - Localhost-only bind validation by default
+ * - FTS configuration via options or AGENTCHAT_ENABLE_FTS env var
+ * - Workspace-aware daemon mode (when workspaceRoot provided):
+ *   - Acquires writer lock (.zulip/locks/writer.lock)
+ *   - Writes server.json (.zulip/server.json with mode 0600)
+ *   - Graceful shutdown removes lock + server.json
  * 
  * @param options Configuration options
  * @returns HubServer instance with stop() method
@@ -221,24 +262,64 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
     dbId,
     schemaVersion,
     dbPath = ":memory:",
+    workspaceRoot,
     migrationsDir,
-    enableFts = false,
+    enableFts,
     allowUnsafeNetwork = false,
-    authToken,
+    authToken: providedAuthToken,
     rateLimitPerClient,
     rateLimitGlobal,
     disableRateLimiting = false,
   } = options;
   
+  const effectiveEnableFts = resolveFtsEnabled(enableFts);
+  
   // Validate localhost-only bind
   assertLocalhostBind(host, { allowUnsafeNetwork });
+
+  // Daemon mode: acquire writer lock before starting server
+  const daemonMode = !!workspaceRoot;
+  if (daemonMode && workspaceRoot) {
+    // Health check function for lock acquisition
+    const healthCheck = async (serverJson: ServerJsonData): Promise<boolean> => {
+      try {
+        const healthUrl = `http://${serverJson.host}:${serverJson.port}/health`;
+        const res = await fetch(healthUrl, {
+          signal: AbortSignal.timeout(2000), // 2s timeout
+        });
+        if (!res.ok) return false;
+        
+        const health = await res.json();
+        // Verify instance_id matches (same hub instance)
+        return health.instance_id === serverJson.instance_id;
+      } catch {
+        return false; // Any error = stale
+      }
+    };
+
+    // Acquire writer lock (throws if live hub exists)
+    await acquireWriterLock({ workspaceRoot, healthCheck });
+  }
+
+  // Determine auth token (daemon mode: load from server.json or generate new)
+  let authToken = providedAuthToken;
+  if (daemonMode && workspaceRoot && !authToken) {
+    // Try to load existing token from server.json (if present and valid)
+    const existingServerJson = await readServerJson({ workspaceRoot });
+    if (existingServerJson?.auth_token) {
+      authToken = existingServerJson.auth_token;
+    } else {
+      // Generate new token for this instance
+      authToken = generateAuthToken();
+    }
+  }
 
   // Open database (default: in-memory for tests) and apply migrations
   const effectiveMigrationsDir =
     migrationsDir ?? join(import.meta.dir, "../../../migrations");
   const db = openDb({ dbPath });
   try {
-    runMigrations({ db, migrationsDir: effectiveMigrationsDir, enableFts });
+    runMigrations({ db, migrationsDir: effectiveMigrationsDir, enableFts: effectiveEnableFts });
   } catch (err) {
     db.close();
     throw err;
@@ -285,6 +366,13 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
     ? null
     : new HubRateLimiter(rateLimitGlobal, rateLimitPerClient);
   rateLimiter?.startCleanup();
+
+  // Graceful shutdown flag (when set, reject new non-health requests)
+  let shuttingDown = false;
+
+  // Track in-flight requests for graceful drain
+  let inflightCount = 0;
+  const inflightPromises = new Set<Promise<void>>();
   
   const server = Bun.serve({
     hostname: host,
@@ -296,6 +384,7 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
       const startMs = Date.now();
 
       // GET /health - unauthenticated health check (no rate limiting, no logging)
+      // Always respond to health checks, even during shutdown
       if (url.pathname === "/health" && req.method === "GET") {
         const uptimeSeconds = Math.floor((Date.now() - startTimeMs) / 1000);
 
@@ -311,6 +400,36 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
 
         // Health endpoint: no logging to avoid noise
         return withRequestIdHeader(Response.json(healthResponse), requestId);
+      }
+
+      // Graceful shutdown: reject new non-health requests with 503
+      if (shuttingDown) {
+        const response = new Response(
+          JSON.stringify({
+            error: "Service unavailable",
+            code: "SHUTTING_DOWN",
+            message: "Hub is shutting down gracefully",
+          }),
+          {
+            status: 503,
+            headers: {
+              "Content-Type": "application/json",
+              "Retry-After": "10", // Suggest client retry in 10s
+            },
+          }
+        );
+        emitLog({
+          ts: new Date().toISOString(),
+          level: "warn",
+          msg: "request_rejected_shutdown",
+          method: req.method,
+          path: url.pathname,
+          status: 503,
+          duration_ms: Date.now() - startMs,
+          instance_id: instanceId,
+          request_id: requestId,
+        });
+        return withRequestIdHeader(response, requestId);
       }
 
       // GET /ws - WebSocket upgrade endpoint
@@ -501,9 +620,37 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
   if (boundPort == null || boundHost == null) {
     await server.stop(true);
     db.close();
+    if (daemonMode && workspaceRoot) {
+      await releaseWriterLock({ workspaceRoot });
+    }
     throw new Error(
       "Hub server must bind to hostname+port (unix sockets not supported)"
     );
+  }
+
+  // Daemon mode: write server.json after successful server start
+  if (daemonMode && workspaceRoot && authToken) {
+    try {
+      const serverJsonData: ServerJsonData = {
+        instance_id: instanceId,
+        db_id: effectiveDbId,
+        port: boundPort,
+        host: boundHost,
+        auth_token: authToken,
+        pid: process.pid,
+        started_at: new Date(startTimeMs).toISOString(),
+        protocol_version: PROTOCOL_VERSION,
+        schema_version: effectiveSchemaVersion,
+      };
+
+      await writeServerJson({ workspaceRoot, data: serverJsonData });
+    } catch (err) {
+      // Failed to write server.json - clean up and fail
+      await server.stop(true);
+      db.close();
+      await releaseWriterLock({ workspaceRoot });
+      throw err;
+    }
   }
 
   return {
@@ -513,7 +660,18 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
     host: boundHost,
 
     async stop() {
+      // Set shutdown flag to reject new work
+      shuttingDown = true;
+
       try {
+        // Wait for in-flight requests to complete (with timeout)
+        const drainTimeout = 10000; // 10s per plan spec
+        if (inflightPromises.size > 0) {
+          const drainPromise = Promise.all(Array.from(inflightPromises));
+          await Promise.race([drainPromise, Bun.sleep(drainTimeout)]);
+        }
+
+        // Close all WebSocket connections (code 1001 = going away)
         wsHub.closeAll?.();
       } finally {
         rateLimiter?.stopCleanup();
@@ -529,7 +687,34 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
         // If it doesn't resolve, we proceed with cleanup anyway.
         await Promise.race([stopPromise, Bun.sleep(250)]);
 
+        // WAL checkpoint (best-effort, TRUNCATE mode to reclaim space)
+        // Do this BEFORE closing the database
+        try {
+          db.run("PRAGMA wal_checkpoint(TRUNCATE)");
+        } catch (err) {
+          // Best-effort; log and continue (only if not test env)
+          if (!isTestEnvironment()) {
+            console.warn("WAL checkpoint failed during shutdown:", err);
+          }
+        }
+
+        // Close database
         db.close();
+
+        // Daemon mode cleanup: remove lock + server.json
+        if (daemonMode && workspaceRoot) {
+          try {
+            await removeServerJson({ workspaceRoot });
+          } catch (err) {
+            console.warn("Failed to remove server.json during shutdown:", err);
+          }
+
+          try {
+            await releaseWriterLock({ workspaceRoot });
+          } catch (err) {
+            console.warn("Failed to release writer lock during shutdown:", err);
+          }
+        }
       }
     },
   };

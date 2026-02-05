@@ -246,6 +246,11 @@ export function rateLimitedResponse(result: RateLimitResult): Response {
     JSON.stringify({
       error: "Rate limit exceeded",
       code: "RATE_LIMITED",
+      details: {
+        limit: result.limit,
+        window: "1s",
+        retry_after: retryAfter,
+      },
     }),
     {
       status: 429,

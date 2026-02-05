@@ -26,6 +26,7 @@ import { generateAuthToken } from "./authToken";
 import { loadWorkspaceConfig, type WorkspaceConfig } from "./config";
 import { runLinkifierPluginsForMessage } from "./linkifierDerived";
 import { runExtractorPluginsForMessage } from "./extractorDerived";
+import { handleUiRequest } from "./ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Structured JSON logger
@@ -76,6 +77,28 @@ function emitLog(entry: HttpLogEntry): void {
 /** Get or generate request ID from X-Request-ID header */
 function getRequestId(req: Request): string {
   return req.headers.get("X-Request-ID") ?? randomUUID();
+}
+
+/** Security headers applied to all responses */
+const SECURITY_HEADERS = {
+  'X-Frame-Options': 'DENY',
+  'X-Content-Type-Options': 'nosniff',
+  'X-XSS-Protection': '1; mode=block',
+  'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://localhost:* ws://127.0.0.1:*; frame-ancestors 'none'",
+  'Referrer-Policy': 'no-referrer',
+} as const;
+
+/** Add security headers to response */
+function withSecurityHeaders(response: Response): Response {
+  const newHeaders = new Headers(response.headers);
+  for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
+    newHeaders.set(key, value);
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: newHeaders,
+  });
 }
 
 /** Add X-Request-ID header to response */
@@ -507,7 +530,7 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
         };
 
         // Health endpoint: no logging to avoid noise
-        return withRequestIdHeader(Response.json(healthResponse), requestId);
+        return withSecurityHeaders(withRequestIdHeader(Response.json(healthResponse), requestId));
       }
 
       // Graceful shutdown: reject new non-health requests with 503
@@ -537,7 +560,7 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
           instance_id: instanceId,
           request_id: requestId,
         });
-        return withRequestIdHeader(response, requestId);
+        return withSecurityHeaders(withRequestIdHeader(response, requestId));
       }
 
       // GET /ws - WebSocket upgrade endpoint
@@ -564,7 +587,7 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
             instance_id: instanceId,
             request_id: requestId,
           });
-          return withRequestIdHeader(response, requestId);
+          return withSecurityHeaders(withRequestIdHeader(response, requestId));
         }
 
         // WS upgrade: log the upgrade attempt
@@ -617,7 +640,7 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
 
       // Helper to finalize response with logging and headers
       const finalizeResponse = (response: Response): Response => {
-        const finalResponse = withRequestIdHeader(withRateLimitHeaders(response), requestId);
+        const finalResponse = withSecurityHeaders(withRequestIdHeader(withRateLimitHeaders(response), requestId));
         emitLog({
           ts: new Date().toISOString(),
           level: response.status >= 400 ? (response.status >= 500 ? "error" : "warn") : "info",
@@ -676,6 +699,30 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
         }
 
         return finalizeResponse(Response.json(responseBody));
+      }
+
+      // /ui/* - HTML UI endpoints (no auth required for GET, token embedded in page)
+      if (url.pathname.startsWith("/ui")) {
+        // UI is only available if authToken is configured
+        if (!authToken) {
+          return finalizeResponse(
+            new Response("UI unavailable: no auth token configured", { status: 503 })
+          );
+        }
+
+        // Determine base URL for API calls
+        const baseUrl = `http://${boundHost}:${boundPort}`;
+        
+        const uiResponse = handleUiRequest(req, {
+          baseUrl,
+          authToken,
+        });
+
+        if (uiResponse) {
+          return finalizeResponse(uiResponse);
+        }
+
+        // UI route not found - fall through to 404
       }
 
       // /api/v1/* - HTTP API endpoints (channels/topics/messages/attachments/events)

@@ -19,7 +19,7 @@ packages/
 ## Dev Commands
 
 ```bash
-bun test              # Full suite (725 tests, ~24s)
+bun test              # Full suite (~24s)
 bun test packages/hub # Test one package
 bun run typecheck     # tsc --noEmit (zero errors required)
 ```
@@ -111,7 +111,7 @@ If you're orchestrating parallel background tasks (via `start_tasks`), these pat
 
 ### Task prompt quality determines success rate
 
-**56% of tasks delivered clean, shippable code.** The rest needed fixes. The difference was how much concrete context the prompt contained.
+The difference between a task that delivers shippable code and one that needs a rewrite is how much concrete context the prompt contained.
 
 **Do:**
 - Include exact type signatures the task should produce or consume

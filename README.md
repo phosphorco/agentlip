@@ -8,7 +8,7 @@ Agents and humans share channels/topics/messages through a durable event stream 
 
 ```bash
 bun install
-bun test              # 725 tests, ~24s
+bun test              # ~24s
 bun run typecheck     # tsc --noEmit
 ```
 
@@ -49,11 +49,11 @@ bun run typecheck     # tsc --noEmit
 # Full suite
 bun test
 
-# By package
-bun test packages/kernel    # 184 tests — schema, queries, mutations, crash safety
-bun test packages/hub       # 409 tests — API, WS, plugins, security, edge cases
-bun test packages/client    # 73 tests  — SDK discovery, WS, events, mutations, Gate F
-bun test packages/cli       # 121 tests — CLI commands, listen, doctor
+# By package (use src/ for cli to avoid picking up client/)
+bun test packages/kernel      # schema, queries, mutations, crash safety
+bun test packages/hub         # API, WS, plugins, security, edge cases
+bun test packages/client      # SDK discovery, WS, events, mutations, Gate F
+bun test packages/cli/src     # CLI commands, listen, doctor
 
 # With FTS enabled
 AGENTCHAT_ENABLE_FTS=1 bun test

@@ -744,6 +744,314 @@ describe("Live Event Streaming", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Subscription Semantics Tests (omit=all, empty=none)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("Subscription Semantics", () => {
+  test("omitted subscriptions replays ALL existing events", async () => {
+    const ctx = createTestContext();
+
+    // Seed events in different channels/topics
+    insertEvent({
+      db: ctx.db,
+      name: "message.created",
+      scopes: { channel_id: "ch1", topic_id: "t1" },
+      entity: { type: "message", id: "msg1" },
+      data: { message: { id: "msg1", content: "Channel 1" } },
+    });
+    insertEvent({
+      db: ctx.db,
+      name: "message.created",
+      scopes: { channel_id: "ch2", topic_id: "t2" },
+      entity: { type: "message", id: "msg2" },
+      data: { message: { id: "msg2", content: "Channel 2" } },
+    });
+    insertEvent({
+      db: ctx.db,
+      name: "system.event",
+      scopes: { channel_id: "ch3" },
+      entity: { type: "system", id: "sys1" },
+      data: { info: "System event" },
+    });
+
+    const serverCtx = await setupTestServer(ctx.db);
+    ctx.server = serverCtx.server;
+    ctx.port = serverCtx.port;
+    ctx.baseWsUrl = serverCtx.baseWsUrl;
+    ctx.hub = serverCtx.hub;
+
+    try {
+      const ws = new WebSocket(`${ctx.baseWsUrl}?token=${AUTH_TOKEN}`);
+
+      const messages: any[] = [];
+
+      await new Promise<void>((resolve, reject) => {
+        ws.onopen = () => {
+          // Omit subscriptions entirely => should get ALL events
+          ws.send(JSON.stringify({
+            type: "hello",
+            after_event_id: 0,
+            // NO subscriptions field!
+          }));
+        };
+
+        ws.onmessage = (event) => {
+          const msg = JSON.parse(event.data);
+          messages.push(msg);
+
+          if (msg.type === "hello_ok") {
+            expect(msg.replay_until).toBe(3); // 3 events total
+          } else if (msg.type === "event") {
+            const events = messages.filter(m => m.type === "event");
+            if (events.length === 3) {
+              resolve();
+            }
+          }
+        };
+
+        ws.onerror = reject;
+        setTimeout(() => reject(new Error("Timeout waiting for all events")), 5000);
+      });
+
+      const events = messages.filter(m => m.type === "event");
+      expect(events.length).toBe(3); // ALL events replayed
+      expect(events[0].event_id).toBe(1);
+      expect(events[1].event_id).toBe(2);
+      expect(events[2].event_id).toBe(3);
+
+      ws.close();
+    } finally {
+      ctx.server.stop();
+      ctx.db.close();
+    }
+  });
+
+  test("omitted subscriptions receives ALL live events", async () => {
+    const ctx = createTestContext();
+    const serverCtx = await setupTestServer(ctx.db);
+    ctx.server = serverCtx.server;
+    ctx.port = serverCtx.port;
+    ctx.baseWsUrl = serverCtx.baseWsUrl;
+    ctx.hub = serverCtx.hub;
+
+    try {
+      const ws = new WebSocket(`${ctx.baseWsUrl}?token=${AUTH_TOKEN}`);
+
+      const messages: any[] = [];
+
+      await new Promise<void>((resolve, reject) => {
+        ws.onopen = () => {
+          // Omit subscriptions entirely => wildcard
+          ws.send(JSON.stringify({
+            type: "hello",
+            after_event_id: 0,
+            // NO subscriptions field!
+          }));
+        };
+
+        ws.onmessage = (event) => {
+          const msg = JSON.parse(event.data);
+          messages.push(msg);
+
+          if (msg.type === "hello_ok") {
+            // Publish live events to various channels
+            const event1 = {
+              event_id: 1,
+              ts: new Date().toISOString(),
+              name: "test.event",
+              scope: { channel_id: "ch1", topic_id: null, topic_id2: null },
+              entity: { type: "test", id: "test1" },
+              data: {},
+            };
+            const event2 = {
+              event_id: 2,
+              ts: new Date().toISOString(),
+              name: "test.event",
+              scope: { channel_id: "ch2", topic_id: "t2", topic_id2: null },
+              entity: { type: "test", id: "test2" },
+              data: {},
+            };
+            const event3 = {
+              event_id: 3,
+              ts: new Date().toISOString(),
+              name: "system.event",
+              scope: { channel_id: null, topic_id: null, topic_id2: null },
+              entity: { type: "system", id: "sys1" },
+              data: {},
+            };
+
+            ctx.hub!.publishEvent(event1);
+            ctx.hub!.publishEvent(event2);
+            ctx.hub!.publishEvent(event3);
+
+            // Wait for events to arrive
+            setTimeout(() => {
+              const events = messages.filter(m => m.type === "event");
+              if (events.length >= 3) {
+                resolve();
+              } else {
+                reject(new Error(`Expected 3 events, got ${events.length}`));
+              }
+            }, 500);
+          }
+        };
+
+        ws.onerror = reject;
+        setTimeout(() => reject(new Error("Timeout")), 5000);
+      });
+
+      const events = messages.filter(m => m.type === "event");
+      expect(events.length).toBe(3); // ALL live events received
+      expect(events.map(e => e.event_id).sort()).toEqual([1, 2, 3]);
+
+      ws.close();
+    } finally {
+      ctx.server.stop();
+      ctx.db.close();
+    }
+  });
+
+  test("explicit empty subscriptions does NOT replay any events", async () => {
+    const ctx = createTestContext();
+
+    // Seed events
+    insertEvent({
+      db: ctx.db,
+      name: "message.created",
+      scopes: { channel_id: "ch1", topic_id: "t1" },
+      entity: { type: "message", id: "msg1" },
+      data: { message: { id: "msg1", content: "Test" } },
+    });
+    insertEvent({
+      db: ctx.db,
+      name: "message.created",
+      scopes: { channel_id: "ch2", topic_id: "t2" },
+      entity: { type: "message", id: "msg2" },
+      data: { message: { id: "msg2", content: "Test2" } },
+    });
+
+    const serverCtx = await setupTestServer(ctx.db);
+    ctx.server = serverCtx.server;
+    ctx.port = serverCtx.port;
+    ctx.baseWsUrl = serverCtx.baseWsUrl;
+    ctx.hub = serverCtx.hub;
+
+    try {
+      const ws = new WebSocket(`${ctx.baseWsUrl}?token=${AUTH_TOKEN}`);
+
+      const messages: any[] = [];
+
+      await new Promise<void>((resolve, reject) => {
+        ws.onopen = () => {
+          // Explicit empty subscriptions => subscribe to NONE
+          ws.send(JSON.stringify({
+            type: "hello",
+            after_event_id: 0,
+            subscriptions: { channels: [], topics: [] }, // Explicitly empty!
+          }));
+        };
+
+        ws.onmessage = (event) => {
+          const msg = JSON.parse(event.data);
+          messages.push(msg);
+
+          if (msg.type === "hello_ok") {
+            // Should get hello_ok, but wait a bit to confirm no events come
+            setTimeout(resolve, 500);
+          } else if (msg.type === "event") {
+            reject(new Error("Should NOT receive any events with empty subscriptions"));
+          }
+        };
+
+        ws.onerror = reject;
+        setTimeout(() => reject(new Error("Timeout")), 5000);
+      });
+
+      // Should have hello_ok only, NO events
+      expect(messages.length).toBe(1);
+      expect(messages[0].type).toBe("hello_ok");
+      expect(messages[0].replay_until).toBe(2); // Events exist but not sent
+
+      ws.close();
+    } finally {
+      ctx.server.stop();
+      ctx.db.close();
+    }
+  });
+
+  test("explicit empty subscriptions does NOT receive live events", async () => {
+    const ctx = createTestContext();
+    const serverCtx = await setupTestServer(ctx.db);
+    ctx.server = serverCtx.server;
+    ctx.port = serverCtx.port;
+    ctx.baseWsUrl = serverCtx.baseWsUrl;
+    ctx.hub = serverCtx.hub;
+
+    try {
+      const ws = new WebSocket(`${ctx.baseWsUrl}?token=${AUTH_TOKEN}`);
+
+      const messages: any[] = [];
+
+      await new Promise<void>((resolve, reject) => {
+        ws.onopen = () => {
+          // Explicit empty subscriptions => subscribe to NONE
+          ws.send(JSON.stringify({
+            type: "hello",
+            after_event_id: 0,
+            subscriptions: { channels: [], topics: [] }, // Explicitly empty!
+          }));
+        };
+
+        ws.onmessage = (event) => {
+          const msg = JSON.parse(event.data);
+          messages.push(msg);
+
+          if (msg.type === "hello_ok") {
+            // Publish some live events
+            const event1 = {
+              event_id: 1,
+              ts: new Date().toISOString(),
+              name: "test.event",
+              scope: { channel_id: "ch1", topic_id: "t1", topic_id2: null },
+              entity: { type: "test", id: "test1" },
+              data: {},
+            };
+            const event2 = {
+              event_id: 2,
+              ts: new Date().toISOString(),
+              name: "test.event",
+              scope: { channel_id: "ch2", topic_id: null, topic_id2: null },
+              entity: { type: "test", id: "test2" },
+              data: {},
+            };
+
+            ctx.hub!.publishEvent(event1);
+            ctx.hub!.publishEvent(event2);
+
+            // Wait a bit, should NOT receive any events
+            setTimeout(resolve, 500);
+          } else if (msg.type === "event") {
+            reject(new Error("Should NOT receive live events with empty subscriptions"));
+          }
+        };
+
+        ws.onerror = reject;
+        setTimeout(() => reject(new Error("Timeout")), 5000);
+      });
+
+      // Should have hello_ok only, NO live events
+      expect(messages.length).toBe(1);
+      expect(messages[0].type).toBe("hello_ok");
+
+      ws.close();
+    } finally {
+      ctx.server.stop();
+      ctx.db.close();
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Size Validation Tests
 // ─────────────────────────────────────────────────────────────────────────────
 

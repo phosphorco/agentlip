@@ -13,6 +13,9 @@
     "@agentchat/workspace": "workspace:*",
     "@agentchat/kernel": "workspace:*"
   },
+  "devDependencies": {
+    "@agentchat/hub": "workspace:*"
+  },
   "scripts": {
     "test": "bun test",
     "verify": "bun verify.ts"

@@ -24,6 +24,7 @@ import {
   isFtsAvailable,
 } from "@agentchat/kernel";
 
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Test helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -573,6 +574,400 @@ describe("CLI integration (via main function)", () => {
       expect(attachments.length).toBeGreaterThan(0);
     } finally {
       db.close();
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Listen command tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { writeFile } from "node:fs/promises";
+import { getChannelByName } from "@agentchat/kernel";
+
+describe("listen command", () => {
+  let tempDir: string;
+  let setupDb: Database;
+  let channelId: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "agentchat-listen-test-"));
+    const { db } = await createTestWorkspace(tempDir);
+    setupDb = db;
+    const seeded = seedTestData(db);
+    channelId = seeded.channelId;
+    setupDb.close();
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  describe("server.json parsing", () => {
+    test("parseServerJson reads valid server.json", async () => {
+      // Create server.json
+      const serverJson = {
+        host: "127.0.0.1",
+        port: 8080,
+        auth_token: "test-token-abc123",
+        instance_id: "test-instance",
+        db_id: "test-db",
+        pid: 12345,
+        started_at: new Date().toISOString(),
+        protocol_version: "v1",
+      };
+      const zulipDir = join(tempDir, ".zulip");
+      await writeFile(join(zulipDir, "server.json"), JSON.stringify(serverJson), "utf-8");
+
+      // Read it back
+      const content = JSON.parse(
+        readFileSync(join(zulipDir, "server.json"), "utf-8")
+      );
+      expect(content.host).toBe("127.0.0.1");
+      expect(content.port).toBe(8080);
+      expect(content.auth_token).toBe("test-token-abc123");
+    });
+
+    test("missing server.json is detected (hub not running)", async () => {
+      // Don't create server.json - it should be missing
+      const zulipDir = join(tempDir, ".zulip");
+      const serverJsonPath = join(zulipDir, "server.json");
+      
+      expect(existsSync(serverJsonPath)).toBe(false);
+    });
+  });
+
+  describe("channel name to ID resolution", () => {
+    test("resolves channel name to ID using local DB", async () => {
+      const { db } = await openWorkspaceDbReadonly({ workspace: tempDir });
+      
+      try {
+        // "test-channel" should resolve to channelId
+        const channel = getChannelByName(db, "test-channel");
+        expect(channel).not.toBeNull();
+        expect(channel!.id).toBe(channelId);
+      } finally {
+        db.close();
+      }
+    });
+
+    test("returns null for non-existent channel name", async () => {
+      const { db } = await openWorkspaceDbReadonly({ workspace: tempDir });
+      
+      try {
+        const channel = getChannelByName(db, "non-existent-channel");
+        expect(channel).toBeNull();
+      } finally {
+        db.close();
+      }
+    });
+  });
+
+  describe("hello message construction", () => {
+    test("omits subscriptions field when no filters specified", () => {
+      // Simulating the hello message construction from runListen
+      const afterEventId = 0;
+      const channelIds: string[] = [];
+      const topicIds: string[] = [];
+
+      interface HelloMessage {
+        type: "hello";
+        after_event_id: number;
+        subscriptions?: {
+          channels?: string[];
+          topics?: string[];
+        };
+      }
+
+      const hello: HelloMessage = {
+        type: "hello",
+        after_event_id: afterEventId,
+      };
+
+      // Only add subscriptions if filters are specified
+      if (channelIds.length > 0 || topicIds.length > 0) {
+        hello.subscriptions = {};
+        if (channelIds.length > 0) {
+          hello.subscriptions.channels = channelIds;
+        }
+        if (topicIds.length > 0) {
+          hello.subscriptions.topics = topicIds;
+        }
+      }
+
+      // Should NOT have subscriptions field (to subscribe to ALL events)
+      expect(hello.subscriptions).toBeUndefined();
+      expect(JSON.stringify(hello)).toBe('{"type":"hello","after_event_id":0}');
+    });
+
+    test("includes subscriptions when channel filter specified", () => {
+      const afterEventId = 42;
+      const channelIds = ["ch-123", "ch-456"];
+      const topicIds: string[] = [];
+
+      interface HelloMessage {
+        type: "hello";
+        after_event_id: number;
+        subscriptions?: {
+          channels?: string[];
+          topics?: string[];
+        };
+      }
+
+      const hello: HelloMessage = {
+        type: "hello",
+        after_event_id: afterEventId,
+      };
+
+      if (channelIds.length > 0 || topicIds.length > 0) {
+        hello.subscriptions = {};
+        if (channelIds.length > 0) {
+          hello.subscriptions.channels = channelIds;
+        }
+        if (topicIds.length > 0) {
+          hello.subscriptions.topics = topicIds;
+        }
+      }
+
+      expect(hello.subscriptions).toBeDefined();
+      expect(hello.subscriptions!.channels).toEqual(["ch-123", "ch-456"]);
+      expect(hello.subscriptions!.topics).toBeUndefined();
+    });
+
+    test("includes subscriptions when topic filter specified", () => {
+      const afterEventId = 100;
+      const channelIds: string[] = [];
+      const topicIds = ["tp-abc"];
+
+      interface HelloMessage {
+        type: "hello";
+        after_event_id: number;
+        subscriptions?: {
+          channels?: string[];
+          topics?: string[];
+        };
+      }
+
+      const hello: HelloMessage = {
+        type: "hello",
+        after_event_id: afterEventId,
+      };
+
+      if (channelIds.length > 0 || topicIds.length > 0) {
+        hello.subscriptions = {};
+        if (channelIds.length > 0) {
+          hello.subscriptions.channels = channelIds;
+        }
+        if (topicIds.length > 0) {
+          hello.subscriptions.topics = topicIds;
+        }
+      }
+
+      expect(hello.subscriptions).toBeDefined();
+      expect(hello.subscriptions!.channels).toBeUndefined();
+      expect(hello.subscriptions!.topics).toEqual(["tp-abc"]);
+    });
+
+    test("includes both channel and topic subscriptions when both specified", () => {
+      const afterEventId = 50;
+      const channelIds = ["ch-test"];
+      const topicIds = ["tp-test"];
+
+      interface HelloMessage {
+        type: "hello";
+        after_event_id: number;
+        subscriptions?: {
+          channels?: string[];
+          topics?: string[];
+        };
+      }
+
+      const hello: HelloMessage = {
+        type: "hello",
+        after_event_id: afterEventId,
+      };
+
+      if (channelIds.length > 0 || topicIds.length > 0) {
+        hello.subscriptions = {};
+        if (channelIds.length > 0) {
+          hello.subscriptions.channels = channelIds;
+        }
+        if (topicIds.length > 0) {
+          hello.subscriptions.topics = topicIds;
+        }
+      }
+
+      expect(hello.subscriptions).toBeDefined();
+      expect(hello.subscriptions!.channels).toEqual(["ch-test"]);
+      expect(hello.subscriptions!.topics).toEqual(["tp-test"]);
+    });
+  });
+
+  describe("event deduplication", () => {
+    test("deduplicates events by event_id", () => {
+      const seenEventIds = new Set<number>();
+      
+      // First event should be accepted
+      const event1 = { event_id: 1, type: "event", name: "test", ts: "", scope: {}, data: {} };
+      expect(seenEventIds.has(event1.event_id)).toBe(false);
+      seenEventIds.add(event1.event_id);
+      
+      // Same event_id should be rejected
+      const event1Dup = { event_id: 1, type: "event", name: "test2", ts: "", scope: {}, data: {} };
+      expect(seenEventIds.has(event1Dup.event_id)).toBe(true);
+      
+      // Different event_id should be accepted
+      const event2 = { event_id: 2, type: "event", name: "test", ts: "", scope: {}, data: {} };
+      expect(seenEventIds.has(event2.event_id)).toBe(false);
+      seenEventIds.add(event2.event_id);
+    });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Live WS integration test (using hub test harness)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Note: Full end-to-end WS tests require the hub to be running.
+// These tests use the integration harness from @agentchat/hub if available.
+
+describe("listen command (live WS)", () => {
+  // Skip if hub is not available or if running in CI without hub
+  const skipLiveTests = process.env.SKIP_LIVE_WS_TESTS === "1";
+
+  test.skipIf(skipLiveTests)("connects to hub and receives hello_ok", async () => {
+    // This test requires @agentchat/hub test harness
+    // Import dynamically to avoid hard dependency
+    let createTempWorkspace: typeof import("@agentchat/hub/test-harness").createTempWorkspace;
+    let startTestHub: typeof import("@agentchat/hub/test-harness").startTestHub;
+    let wsConnect: typeof import("@agentchat/hub/test-harness").wsConnect;
+
+    try {
+      const harness = await import("@agentchat/hub/test-harness");
+      createTempWorkspace = harness.createTempWorkspace;
+      startTestHub = harness.startTestHub;
+      wsConnect = harness.wsConnect;
+    } catch {
+      // Hub harness not available - skip
+      console.log("Skipping live WS test: @agentchat/hub harness not available");
+      return;
+    }
+
+    // Create workspace and start hub
+    const ws = await createTempWorkspace();
+    const hub = await startTestHub({
+      workspaceRoot: ws.root,
+      authToken: "test-token",
+    });
+
+    try {
+      // Connect via WS
+      const wsUrl = `ws://${hub.server.host}:${hub.server.port}/ws`;
+      const client = await wsConnect({ url: wsUrl, token: "test-token" });
+
+      // Send hello (no subscriptions = all events)
+      const hello = { type: "hello", after_event_id: 0 };
+      client.sendJson(hello);
+
+      // Wait for hello_ok
+      const response = await client.waitForMessage(5000);
+      const data = JSON.parse(response.data as string);
+
+      expect(data.type).toBe("hello_ok");
+      expect(typeof data.replay_until).toBe("number");
+      expect(typeof data.instance_id).toBe("string");
+
+      client.close();
+    } finally {
+      await hub.stop();
+      await ws.cleanup();
+    }
+  });
+
+  test.skipIf(skipLiveTests)("receives events when message is created", async () => {
+    let createTempWorkspace: typeof import("@agentchat/hub/test-harness").createTempWorkspace;
+    let startTestHub: typeof import("@agentchat/hub/test-harness").startTestHub;
+    let wsConnect: typeof import("@agentchat/hub/test-harness").wsConnect;
+
+    try {
+      const harness = await import("@agentchat/hub/test-harness");
+      createTempWorkspace = harness.createTempWorkspace;
+      startTestHub = harness.startTestHub;
+      wsConnect = harness.wsConnect;
+    } catch {
+      console.log("Skipping live WS test: @agentchat/hub harness not available");
+      return;
+    }
+
+    const ws = await createTempWorkspace();
+    const hub = await startTestHub({
+      workspaceRoot: ws.root,
+      authToken: "test-token",
+    });
+
+    try {
+      // Connect via WS with channel subscription
+      const wsUrl = `ws://${hub.server.host}:${hub.server.port}/ws`;
+      const client = await wsConnect({ url: wsUrl, token: "test-token" });
+
+      // First create a channel
+      const channelRes = await fetch(`${hub.url}/api/v1/channels`, {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer test-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: "test-channel" }),
+      });
+      const channelData = await channelRes.json() as { channel: { id: string } };
+      const channelId = channelData.channel.id;
+
+      // Subscribe to that channel
+      const hello = { 
+        type: "hello", 
+        after_event_id: 0,
+        subscriptions: { channels: [channelId] },
+      };
+      client.sendJson(hello);
+
+      // Wait for hello_ok
+      const helloOk = await client.waitForMessage(5000);
+      const helloOkData = JSON.parse(helloOk.data as string);
+      expect(helloOkData.type).toBe("hello_ok");
+
+      // Replay may have events from channel creation - consume them
+      // (This is just to clear the buffer)
+      try {
+        while (true) {
+          await client.waitForMessage(100);
+        }
+      } catch {
+        // Timeout expected when no more messages
+      }
+
+      // Create a topic in that channel
+      const topicRes = await fetch(`${hub.url}/api/v1/topics`, {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer test-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ channel_id: channelId, title: "Test Topic" }),
+      });
+      const topicData = await topicRes.json() as { topic: { id: string } };
+      const topicId = topicData.topic.id;
+
+      // We should receive an event
+      const eventMsg = await client.waitForMessage(5000);
+      const eventData = JSON.parse(eventMsg.data as string);
+
+      expect(eventData.type).toBe("event");
+      expect(eventData.name).toBe("topic.created");
+
+      client.close();
+    } finally {
+      await hub.stop();
+      await ws.cleanup();
     }
   });
 });

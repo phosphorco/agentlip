@@ -16,6 +16,69 @@ import {
 } from "./rateLimiter";
 import { readJsonBody, SIZE_LIMITS } from "./bodyParser";
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Structured JSON logger
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Cached test environment detection result */
+let _isTestEnvCached: boolean | null = null;
+
+/** Detect if running under test environment to suppress log noise */
+function isTestEnvironment(): boolean {
+  if (_isTestEnvCached !== null) return _isTestEnvCached;
+  
+  _isTestEnvCached =
+    // Explicit environment variables (conventional)
+    process.env.NODE_ENV === "test" ||
+    process.env.VITEST !== undefined ||
+    process.env.JEST_WORKER_ID !== undefined ||
+    // Bun test: entry point is a .test. or _test. file
+    (process.argv[1]?.match(/[._]test\.[jt]sx?$/) !== null) ||
+    // CI test runners often set this
+    process.env.CI === "true" && process.env.AGENTCHAT_LOG_LEVEL === undefined;
+  
+  return _isTestEnvCached;
+}
+
+/** Structured log entry for HTTP requests */
+export interface HttpLogEntry {
+  ts: string;
+  level: "info" | "warn" | "error";
+  msg: string;
+  method: string;
+  path: string;
+  status: number;
+  duration_ms: number;
+  instance_id: string;
+  request_id: string;
+  event_ids?: number[];
+  content_length?: number;
+}
+
+/** Emit a structured JSON log line (no-op in test environment) */
+function emitLog(entry: HttpLogEntry): void {
+  if (isTestEnvironment()) return;
+  // Write to stdout as single JSON line
+  console.log(JSON.stringify(entry));
+}
+
+/** Get or generate request ID from X-Request-ID header */
+function getRequestId(req: Request): string {
+  return req.headers.get("X-Request-ID") ?? randomUUID();
+}
+
+/** Add X-Request-ID header to response */
+function withRequestIdHeader(response: Response, requestId: string): Response {
+  // Clone response to add header (Response headers may be immutable)
+  const newHeaders = new Headers(response.headers);
+  newHeaders.set("X-Request-ID", requestId);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: newHeaders,
+  });
+}
+
 // Re-export auth middleware utilities
 export {
   parseBearerToken,
@@ -229,8 +292,10 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
 
     fetch(req: Request, bunServer: any) {
       const url = new URL(req.url);
+      const requestId = getRequestId(req);
+      const startMs = Date.now();
 
-      // GET /health - unauthenticated health check (no rate limiting)
+      // GET /health - unauthenticated health check (no rate limiting, no logging)
       if (url.pathname === "/health" && req.method === "GET") {
         const uptimeSeconds = Math.floor((Date.now() - startTimeMs) / 1000);
 
@@ -244,13 +309,14 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
           uptime_seconds: uptimeSeconds,
         };
 
-        return Response.json(healthResponse);
+        // Health endpoint: no logging to avoid noise
+        return withRequestIdHeader(Response.json(healthResponse), requestId);
       }
 
       // GET /ws - WebSocket upgrade endpoint
       if (url.pathname === "/ws") {
         if (!authToken) {
-          return new Response(
+          const response = new Response(
             JSON.stringify({
               error: "Service unavailable",
               code: "NO_AUTH_CONFIGURED",
@@ -260,19 +326,57 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
               headers: { "Content-Type": "application/json" },
             }
           );
+          emitLog({
+            ts: new Date().toISOString(),
+            level: "warn",
+            msg: "request",
+            method: req.method,
+            path: url.pathname,
+            status: 503,
+            duration_ms: Date.now() - startMs,
+            instance_id: instanceId,
+            request_id: requestId,
+          });
+          return withRequestIdHeader(response, requestId);
         }
 
+        // WS upgrade: log the upgrade attempt
+        emitLog({
+          ts: new Date().toISOString(),
+          level: "info",
+          msg: "ws_upgrade",
+          method: req.method,
+          path: url.pathname,
+          status: 101,
+          duration_ms: Date.now() - startMs,
+          instance_id: instanceId,
+          request_id: requestId,
+        });
         return wsHandlers.upgrade(req, bunServer);
       }
 
       return (async () => {
+      // Track event IDs produced by mutations
+      let capturedEventIds: number[] | undefined;
 
       // Apply rate limiting to all non-health endpoints
       let rateLimitResult: { allowed: boolean; limit: number; remaining: number; resetAt: number } | null = null;
       if (rateLimiter) {
         rateLimitResult = rateLimiter.check(req);
         if (!rateLimitResult.allowed) {
-          return rateLimitedResponse(rateLimitResult);
+          const response = rateLimitedResponse(rateLimitResult);
+          emitLog({
+            ts: new Date().toISOString(),
+            level: "warn",
+            msg: "request",
+            method: req.method,
+            path: url.pathname,
+            status: response.status,
+            duration_ms: Date.now() - startMs,
+            instance_id: instanceId,
+            request_id: requestId,
+          });
+          return withRequestIdHeader(response, requestId);
         }
       }
 
@@ -284,12 +388,30 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
         return response;
       };
 
+      // Helper to finalize response with logging and headers
+      const finalizeResponse = (response: Response): Response => {
+        const finalResponse = withRequestIdHeader(withRateLimitHeaders(response), requestId);
+        emitLog({
+          ts: new Date().toISOString(),
+          level: response.status >= 400 ? (response.status >= 500 ? "error" : "warn") : "info",
+          msg: "request",
+          method: req.method,
+          path: url.pathname,
+          status: response.status,
+          duration_ms: Date.now() - startMs,
+          instance_id: instanceId,
+          request_id: requestId,
+          ...(capturedEventIds && capturedEventIds.length > 0 ? { event_ids: capturedEventIds } : {}),
+        });
+        return finalResponse;
+      };
+
       // POST /api/v1/_ping - authenticated ping (sample mutation endpoint)
       // Demonstrates auth + rate limiting + body parsing middleware usage
       if (url.pathname === "/api/v1/_ping" && req.method === "POST") {
         if (!authToken) {
           // Hub started without auth token - reject all mutations
-          return withRateLimitHeaders(
+          return finalizeResponse(
             new Response(
               JSON.stringify({ error: "Service unavailable", code: "NO_AUTH_CONFIGURED" }),
               { status: 503, headers: { "Content-Type": "application/json" } }
@@ -299,7 +421,7 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
 
         const authResult = requireAuth(req, authToken);
         if (authResult.ok === false) {
-          return withRateLimitHeaders(authResult.response);
+          return finalizeResponse(authResult.response);
         }
 
         // Parse JSON body with size limit (optional body for _ping)
@@ -312,7 +434,7 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
           // Check if it's a content-type issue (no body is ok for ping)
           const contentType = req.headers.get("Content-Type");
           if (contentType && contentType.includes("application/json")) {
-            return withRateLimitHeaders(bodyResult.response);
+            return finalizeResponse(bodyResult.response);
           }
         }
 
@@ -326,7 +448,7 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
           responseBody.echo = bodyResult.data.echo;
         }
 
-        return withRateLimitHeaders(Response.json(responseBody));
+        return finalizeResponse(Response.json(responseBody));
       }
 
       // /api/v1/* - HTTP API endpoints (channels/topics/messages/attachments/events)
@@ -336,7 +458,7 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
 
         // Hub started without auth token - reject all mutations
         if (isMutation && !authToken) {
-          return withRateLimitHeaders(
+          return finalizeResponse(
             new Response(
               JSON.stringify({
                 error: "Service unavailable",
@@ -352,16 +474,17 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
           authToken: authToken ?? "",
           instanceId,
           onEventIds(eventIds) {
+            capturedEventIds = eventIds;
             wsHub.publishEventIds(eventIds);
           },
         };
 
         const apiResponse = await handleApiV1(req, apiCtx);
-        return withRateLimitHeaders(apiResponse);
+        return finalizeResponse(apiResponse);
       }
 
       // 404 for all other routes
-      return new Response("Not Found", { status: 404 });
+      return finalizeResponse(new Response("Not Found", { status: 404 }));
       })();
     },
 

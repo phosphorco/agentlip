@@ -9,6 +9,20 @@
         "typescript": "^5.5.4",
       },
     },
+    "packages/cli": {
+      "name": "@agentchat/cli",
+      "version": "0.0.0",
+      "bin": {
+        "agentchat": "./src/agentchat.ts",
+      },
+      "dependencies": {
+        "@agentchat/kernel": "workspace:*",
+        "@agentchat/workspace": "workspace:*",
+      },
+      "devDependencies": {
+        "@agentchat/hub": "workspace:*",
+      },
+    },
     "packages/hub": {
       "name": "@agentchat/hub",
       "version": "0.0.0",
@@ -35,6 +49,8 @@
     },
   },
   "packages": {
+    "@agentchat/cli": ["@agentchat/cli@workspace:packages/cli"],
+
     "@agentchat/hub": ["@agentchat/hub@workspace:packages/hub"],
 
     "@agentchat/kernel": ["@agentchat/kernel@workspace:packages/kernel"],

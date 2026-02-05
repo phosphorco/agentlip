@@ -10,11 +10,13 @@
  * - msg page: paginate messages with cursor
  * - attachment list: list topic attachments
  * - search: full-text search (if FTS available)
+ * - listen: stream events via WebSocket
  */
 
-import { openWorkspaceDbReadonly, isQueryOnly, WorkspaceNotFoundError, DatabaseNotFoundError } from "./index.js";
+import { openWorkspaceDbReadonly, isQueryOnly, WorkspaceNotFoundError, DatabaseNotFoundError, discoverWorkspaceRoot } from "./index.js";
 import {
   listChannels,
+  getChannelByName,
   listTopicsByChannel,
   tailMessages,
   listMessages,
@@ -27,6 +29,8 @@ import {
   type ListResult,
 } from "@agentchat/kernel";
 import type { Database } from "bun:sqlite";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -82,6 +86,50 @@ interface SearchResult {
   messages?: Message[];
   count?: number;
   error?: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Listen Types (WS streaming)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface ListenOptions extends GlobalOptions {
+  since: number;
+  channels: string[];
+  topicIds: string[];
+}
+
+interface ServerJsonData {
+  host: string;
+  port: number;
+  auth_token: string;
+}
+
+interface HelloMessage {
+  type: "hello";
+  after_event_id: number;
+  subscriptions?: {
+    channels?: string[];
+    topics?: string[];
+  };
+}
+
+interface HelloOkMessage {
+  type: "hello_ok";
+  replay_until: number;
+  instance_id: string;
+}
+
+interface EventEnvelope {
+  type: "event";
+  event_id: number;
+  ts: string;
+  name: string;
+  scope: {
+    channel_id?: string | null;
+    topic_id?: string | null;
+    topic_id2?: string | null;
+  };
+  data: Record<string, unknown>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -498,6 +546,297 @@ function printHumanSearch(result: SearchResult): void {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// listen command (WebSocket event stream)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Read server.json from workspace .zulip directory.
+ */
+async function readServerJson(workspaceRoot: string): Promise<ServerJsonData | null> {
+  try {
+    const serverJsonPath = join(workspaceRoot, ".zulip", "server.json");
+    const content = await readFile(serverJsonPath, "utf-8");
+    return JSON.parse(content) as ServerJsonData;
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException)?.code === "ENOENT") {
+      return null;
+    }
+    throw err;
+  }
+}
+
+/**
+ * Map channel names to IDs using local DB.
+ * If a value looks like a channel name (exists in DB), map to ID; otherwise treat as ID.
+ */
+async function resolveChannelIds(
+  workspaceRoot: string,
+  channelInputs: string[]
+): Promise<string[]> {
+  if (channelInputs.length === 0) return [];
+
+  const { db } = await openWorkspaceDbReadonly({ workspace: workspaceRoot });
+  try {
+    const resolved: string[] = [];
+    for (const input of channelInputs) {
+      // Try to find by name first
+      const byName = getChannelByName(db, input);
+      if (byName) {
+        resolved.push(byName.id);
+      } else {
+        // Treat as ID
+        resolved.push(input);
+      }
+    }
+    return resolved;
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Run the listen command - connects to hub WS and streams events as JSONL.
+ */
+async function runListen(options: ListenOptions): Promise<void> {
+  // 1. Discover workspace root
+  const startPath = options.workspace ?? process.cwd();
+  const discovered = await discoverWorkspaceRoot(startPath);
+  if (!discovered) {
+    console.error(`Error: No workspace found (no .zulip/db.sqlite3 in directory tree starting from ${startPath})`);
+    process.exit(1);
+  }
+  const workspaceRoot = discovered.root;
+
+  // 2. Read server.json
+  const serverJson = await readServerJson(workspaceRoot);
+  if (!serverJson) {
+    console.error("Error: Hub not running (server.json not found). Start hub with: agentchatd up");
+    process.exit(3);
+  }
+
+  // 3. Map channel names to IDs
+  let channelIds: string[] = [];
+  if (options.channels.length > 0) {
+    try {
+      channelIds = await resolveChannelIds(workspaceRoot, options.channels);
+    } catch (err) {
+      console.error(`Error resolving channels: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+  }
+  const topicIds = options.topicIds;
+
+  // 4. Build WS URL
+  const wsUrl = `ws://${serverJson.host}:${serverJson.port}/ws?token=${encodeURIComponent(serverJson.auth_token)}`;
+
+  // 5. Connection state
+  let lastSeenEventId = options.since;
+  const seenEventIds = new Set<number>();
+  let reconnectDelay = 1000;
+  const maxReconnectDelay = 30000;
+  let shouldRun = true;
+  let currentWs: WebSocket | null = null;
+
+  // Handle Ctrl+C
+  const cleanup = () => {
+    shouldRun = false;
+    if (currentWs) {
+      try {
+        currentWs.close(1000, "Client shutdown");
+      } catch {
+        // Ignore close errors
+      }
+    }
+    process.exit(0);
+  };
+  process.on("SIGINT", cleanup);
+  process.on("SIGTERM", cleanup);
+
+  // 6. Connection loop
+  while (shouldRun) {
+    try {
+      await connectAndStream(
+        wsUrl,
+        lastSeenEventId,
+        channelIds,
+        topicIds,
+        seenEventIds,
+        (eventId) => { lastSeenEventId = eventId; },
+        () => shouldRun,
+        (ws) => { currentWs = ws; }
+      );
+
+      // If we reach here, connection closed cleanly (code 1000)
+      // Check if we should reconnect
+      if (!shouldRun) break;
+
+    } catch (err) {
+      if (!shouldRun) break;
+
+      const errorMsg = err instanceof Error ? err.message : String(err);
+
+      // Check for auth failure (don't retry)
+      if (errorMsg.includes("4401") || errorMsg.includes("Unauthorized")) {
+        console.error("Error: Authentication failed. Check hub auth token.");
+        process.exit(4);
+      }
+
+      // Log reconnection attempt
+      console.error(`Connection error: ${errorMsg}. Reconnecting in ${reconnectDelay / 1000}s...`);
+
+      // Wait before reconnecting
+      await sleep(reconnectDelay);
+
+      // Exponential backoff
+      reconnectDelay = Math.min(reconnectDelay * 2, maxReconnectDelay);
+    }
+
+    // Reset reconnect delay on successful connection cycle
+    reconnectDelay = 1000;
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Connect to WebSocket and stream events until disconnect.
+ */
+async function connectAndStream(
+  wsUrl: string,
+  afterEventId: number,
+  channelIds: string[],
+  topicIds: string[],
+  seenEventIds: Set<number>,
+  updateLastSeen: (eventId: number) => void,
+  shouldContinue: () => boolean,
+  setCurrentWs: (ws: WebSocket | null) => void
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(wsUrl);
+    setCurrentWs(ws);
+
+    let handshakeComplete = false;
+    let resolved = false;
+
+    const finish = (error?: Error) => {
+      if (resolved) return;
+      resolved = true;
+      setCurrentWs(null);
+      if (error) {
+        reject(error);
+      } else {
+        resolve();
+      }
+    };
+
+    const openTimeout = setTimeout(() => {
+      if (!resolved) {
+        ws.close();
+        finish(new Error("WebSocket open timeout after 10s"));
+      }
+    }, 10000);
+
+    ws.onopen = () => {
+      clearTimeout(openTimeout);
+
+      // Build hello message
+      const hello: HelloMessage = {
+        type: "hello",
+        after_event_id: afterEventId,
+      };
+
+      // Only add subscriptions if filters are specified
+      // Per plan: omit subscriptions field entirely for ALL events
+      if (channelIds.length > 0 || topicIds.length > 0) {
+        hello.subscriptions = {};
+        if (channelIds.length > 0) {
+          hello.subscriptions.channels = channelIds;
+        }
+        if (topicIds.length > 0) {
+          hello.subscriptions.topics = topicIds;
+        }
+      }
+
+      ws.send(JSON.stringify(hello));
+    };
+
+    ws.onmessage = (event) => {
+      if (!shouldContinue()) {
+        ws.close(1000, "Client shutdown");
+        return;
+      }
+
+      try {
+        const data = JSON.parse(String(event.data));
+
+        if (data.type === "hello_ok") {
+          handshakeComplete = true;
+          // Log hello_ok to stderr for debugging (not stdout which is for JSONL)
+          // console.error(`Connected. replay_until=${(data as HelloOkMessage).replay_until}`);
+          return;
+        }
+
+        if (data.type === "event") {
+          const envelope = data as EventEnvelope;
+
+          // Deduplicate
+          if (seenEventIds.has(envelope.event_id)) {
+            return;
+          }
+          seenEventIds.add(envelope.event_id);
+
+          // Track for resume
+          updateLastSeen(envelope.event_id);
+
+          // Output as JSONL to stdout
+          console.log(JSON.stringify(envelope));
+        }
+      } catch (err) {
+        // Log parse errors to stderr
+        console.error(`Error parsing message: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    };
+
+    ws.onerror = (err) => {
+      clearTimeout(openTimeout);
+      if (!handshakeComplete) {
+        finish(new Error(`WebSocket error: ${String(err)}`));
+      }
+    };
+
+    ws.onclose = (event) => {
+      clearTimeout(openTimeout);
+
+      const code = (event as CloseEvent).code;
+      const reason = (event as CloseEvent).reason || "unknown";
+
+      // Check close codes per plan:
+      // 1000: Normal closure - don't reconnect
+      // 1001: Going away (server shutdown) - reconnect after delay
+      // 1008: Policy violation (backpressure) - reconnect immediately  
+      // 1011: Internal error - reconnect with backoff
+      // 4401: Unauthorized - don't reconnect
+
+      if (code === 1000) {
+        // Normal close - don't reconnect
+        finish();
+        return;
+      }
+
+      if (code === 4401) {
+        finish(new Error("4401: Unauthorized"));
+        return;
+      }
+
+      // All other codes: trigger reconnect via error
+      finish(new Error(`WebSocket closed: code=${code}, reason=${reason}`));
+    };
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Help messages
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -512,6 +851,7 @@ function printHelp(): void {
   console.log("  msg page             Paginate messages with cursor");
   console.log("  attachment list      List topic attachments");
   console.log("  search               Full-text search messages");
+  console.log("  listen               Stream events via WebSocket");
   console.log();
   console.log("Global options:");
   console.log("  --workspace <path>   Explicit workspace root (default: auto-discover)");
@@ -616,6 +956,30 @@ function printSearchHelp(): void {
   console.log("Exit codes:");
   console.log("  0  OK");
   console.log("  1  Error (FTS not available, workspace not found, etc.)");
+}
+
+function printListenHelp(): void {
+  console.log("Usage: agentchat listen [--since <event_id>] [--channel <name|id>...] [--topic-id <id>...] [--workspace <path>]");
+  console.log();
+  console.log("Stream events from hub via WebSocket (JSONL output to stdout).");
+  console.log();
+  console.log("Options:");
+  console.log("  --since <event_id>  Start from this event ID (default: 0, all history)");
+  console.log("  --channel <name|id> Filter by channel (can specify multiple times)");
+  console.log("  --topic-id <id>     Filter by topic ID (can specify multiple times)");
+  console.log("  --workspace <path>  Explicit workspace root (default: auto-discover)");
+  console.log("  --help, -h          Show this help");
+  console.log();
+  console.log("If no --channel or --topic-id filters are specified, subscribes to ALL events.");
+  console.log();
+  console.log("Auto-reconnects on disconnect with exponential backoff (1s to 30s).");
+  console.log("Deduplicates events on reconnect. Press Ctrl+C to exit.");
+  console.log();
+  console.log("Exit codes:");
+  console.log("  0  Normal exit (Ctrl+C)");
+  console.log("  1  Error (workspace not found, etc.)");
+  console.log("  3  Hub not running (server.json not found)");
+  console.log("  4  Authentication failed");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -855,6 +1219,61 @@ export async function main(argv: string[] = process.argv.slice(2)) {
     const result = await runSearch({ ...globalOpts, query, limit });
     output(result, globalOpts.json ?? false, () => printHumanSearch(result));
     process.exit(result.status === "ok" ? 0 : 1);
+  }
+
+  // ─── listen ───
+  if (command === "listen") {
+    if (remainingArgs.includes("--help") || remainingArgs.includes("-h")) {
+      printListenHelp();
+      process.exit(0);
+    }
+    
+    let since = 0;
+    const channels: string[] = [];
+    const topicIds: string[] = [];
+    
+    for (let i = 0; i < remainingArgs.length; i++) {
+      const arg = remainingArgs[i];
+      if (arg === "--since") {
+        since = parseInt(remainingArgs[++i], 10);
+        if (isNaN(since) || since < 0) {
+          console.error("--since must be a non-negative integer");
+          process.exit(1);
+        }
+      } else if (arg === "--channel") {
+        const value = remainingArgs[++i];
+        if (!value) {
+          console.error("--channel requires a value");
+          process.exit(1);
+        }
+        channels.push(value);
+      } else if (arg === "--topic-id") {
+        const value = remainingArgs[++i];
+        if (!value) {
+          console.error("--topic-id requires a value");
+          process.exit(1);
+        }
+        topicIds.push(value);
+      } else if (arg === "--format") {
+        // Only jsonl is supported; accept but ignore
+        const value = remainingArgs[++i];
+        if (value !== "jsonl") {
+          console.error("Only --format jsonl is supported");
+          process.exit(1);
+        }
+      }
+    }
+    
+    // Run listen (this is a long-running command)
+    await runListen({
+      ...globalOpts,
+      since,
+      channels,
+      topicIds,
+    });
+    
+    // Should not reach here unless cleanly exited
+    process.exit(0);
   }
 
   // ─── unknown ───

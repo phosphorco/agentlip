@@ -55,9 +55,15 @@ interface EventEnvelope {
 interface WsConnectionData {
   authenticated: boolean;
   handshakeComplete: boolean;
+  /**
+   * Subscription filters:
+   * - `null` for channels/topics means "wildcard" (subscribe to all) - used when hello.subscriptions is omitted
+   * - Empty Set means "subscribe to none" - used when hello.subscriptions is provided but empty
+   * - Non-empty Set means "subscribe to specific IDs"
+   */
   subscriptions: {
-    channels: Set<string>;
-    topics: Set<string>;
+    channels: Set<string> | null;
+    topics: Set<string> | null;
   };
   replayUntil?: number;
 }
@@ -240,8 +246,8 @@ export function createWsHandlers(options: CreateWsHandlersOptions): WsHandlers {
         authenticated: true,
         handshakeComplete: false,
         subscriptions: {
-          channels: new Set<string>(),
-          topics: new Set<string>(),
+          channels: null, // Will be set in handleHello
+          topics: null,
         },
       } as WsConnectionData,
     });
@@ -310,23 +316,38 @@ function handleHello(
     return;
   }
 
-  // Extract subscriptions
+  // Determine subscription mode:
+  // - omitted subscriptions = wildcard (null) = subscribe to ALL
+  // - provided but empty = subscribe to NONE
+  // - provided with values = filter to those values
+  const subscriptionsOmitted = hello.subscriptions === undefined;
+  
+  // Extract channel/topic arrays if subscriptions was provided
   const channelIds = hello.subscriptions?.channels ?? [];
   const topicIds = hello.subscriptions?.topics ?? [];
 
-  // Validate subscriptions are arrays of strings
-  if (!Array.isArray(channelIds) || !channelIds.every(id => typeof id === "string")) {
-    ws.close(1003, "Invalid channel subscriptions");
-    return;
-  }
-  if (!Array.isArray(topicIds) || !topicIds.every(id => typeof id === "string")) {
-    ws.close(1003, "Invalid topic subscriptions");
-    return;
+  // Validate subscriptions are arrays of strings (only if provided)
+  if (!subscriptionsOmitted) {
+    if (!Array.isArray(channelIds) || !channelIds.every(id => typeof id === "string")) {
+      ws.close(1003, "Invalid channel subscriptions");
+      return;
+    }
+    if (!Array.isArray(topicIds) || !topicIds.every(id => typeof id === "string")) {
+      ws.close(1003, "Invalid topic subscriptions");
+      return;
+    }
   }
 
-  // Store subscriptions
-  ws.data.subscriptions.channels = new Set(channelIds);
-  ws.data.subscriptions.topics = new Set(topicIds);
+  // Store subscriptions:
+  // - null means wildcard (subscribe to all) - when subscriptions omitted
+  // - Set means filter to those IDs (empty Set = subscribe to none)
+  if (subscriptionsOmitted) {
+    ws.data.subscriptions.channels = null; // wildcard
+    ws.data.subscriptions.topics = null;   // wildcard
+  } else {
+    ws.data.subscriptions.channels = new Set(channelIds);
+    ws.data.subscriptions.topics = new Set(topicIds);
+  }
 
   // Compute replay boundary (snapshot of latest event_id)
   const replayUntil = getLatestEventId(db);
@@ -348,15 +369,29 @@ function handleHello(
   // Mark handshake complete
   ws.data.handshakeComplete = true;
 
+  // Determine if we should do replay:
+  // - If subscriptions was explicitly provided but both channels and topics are empty,
+  //   that means "subscribe to none" - skip replay entirely
+  // - Otherwise, replay with appropriate filters
+  const subscribeToNone = !subscriptionsOmitted && 
+    channelIds.length === 0 && topicIds.length === 0;
+
+  if (subscribeToNone) {
+    // No replay when explicitly subscribing to nothing
+    return;
+  }
+
   // Send replay events if any
   if (replayUntil > hello.after_event_id) {
     try {
+      // For wildcard (omitted subscriptions), pass undefined to get all events
+      // For filtered, pass the arrays (or undefined if that filter is empty but other isn't)
       const events = replayEvents({
         db,
         afterEventId: hello.after_event_id,
         replayUntil,
-        channelIds: channelIds.length > 0 ? channelIds : undefined,
-        topicIds: topicIds.length > 0 ? topicIds : undefined,
+        channelIds: subscriptionsOmitted ? undefined : (channelIds.length > 0 ? channelIds : undefined),
+        topicIds: subscriptionsOmitted ? undefined : (topicIds.length > 0 ? topicIds : undefined),
         limit: 1000, // Plan default
       });
 
@@ -409,24 +444,37 @@ function sendEventWithBackpressure(
 
 function isEventSubscribed(
   event: ParsedEvent,
-  subscriptions: { channels: Set<string>; topics: Set<string> }
+  subscriptions: { channels: Set<string> | null; topics: Set<string> | null }
 ): boolean {
-  // If no subscriptions, match nothing (empty subscription = no events)
-  if (subscriptions.channels.size === 0 && subscriptions.topics.size === 0) {
+  // Wildcard mode: if both channels and topics are null, match ALL events
+  // This happens when hello.subscriptions is omitted entirely
+  if (subscriptions.channels === null && subscriptions.topics === null) {
+    return true;
+  }
+
+  // If both are non-null Sets and both are empty, match NONE
+  // This happens when hello.subscriptions was provided but empty: { channels: [], topics: [] }
+  if (subscriptions.channels !== null && subscriptions.topics !== null &&
+      subscriptions.channels.size === 0 && subscriptions.topics.size === 0) {
     return false;
   }
 
+  // Filter mode: check if event matches any subscribed channel or topic
   // Match by channel
-  if (event.scope.channel_id && subscriptions.channels.has(event.scope.channel_id)) {
-    return true;
+  if (subscriptions.channels !== null && subscriptions.channels.size > 0) {
+    if (event.scope.channel_id && subscriptions.channels.has(event.scope.channel_id)) {
+      return true;
+    }
   }
 
   // Match by topic (scope_topic_id or scope_topic_id2)
-  if (event.scope.topic_id && subscriptions.topics.has(event.scope.topic_id)) {
-    return true;
-  }
-  if (event.scope.topic_id2 && subscriptions.topics.has(event.scope.topic_id2)) {
-    return true;
+  if (subscriptions.topics !== null && subscriptions.topics.size > 0) {
+    if (event.scope.topic_id && subscriptions.topics.has(event.scope.topic_id)) {
+      return true;
+    }
+    if (event.scope.topic_id2 && subscriptions.topics.has(event.scope.topic_id2)) {
+      return true;
+    }
   }
 
   return false;

@@ -3,6 +3,20 @@ import { randomUUID } from "node:crypto";
 import type { Server } from "bun";
 import type { HealthResponse } from "@agentchat/protocol";
 import { PROTOCOL_VERSION } from "@agentchat/protocol";
+import { requireAuth, requireWsToken } from "./authMiddleware";
+
+// Re-export auth middleware utilities
+export {
+  parseBearerToken,
+  requireAuth,
+  requireWsToken,
+  type AuthResult,
+  type AuthOk,
+  type AuthFailure,
+  type WsAuthResult,
+  type WsAuthOk,
+  type WsAuthFailure,
+} from "./authMiddleware";
 
 export interface StartHubOptions {
   host?: string;
@@ -11,6 +25,8 @@ export interface StartHubOptions {
   dbId?: string;
   schemaVersion?: number;
   allowUnsafeNetwork?: boolean;
+  /** Auth token for mutation endpoints + WS. If not provided, mutations are rejected. */
+  authToken?: string;
 }
 
 export interface HubServer {
@@ -82,6 +98,7 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
     dbId = "unknown", // Will be replaced with actual db_id from meta table in future tasks
     schemaVersion = 0, // Will be replaced with actual schema version in future tasks
     allowUnsafeNetwork = false,
+    authToken,
   } = options;
   
   // Validate localhost-only bind
@@ -112,6 +129,26 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
         };
 
         return Response.json(healthResponse);
+      }
+
+      // POST /api/v1/_ping - authenticated ping (sample mutation endpoint)
+      // Demonstrates auth middleware usage pattern for future mutations
+      if (url.pathname === "/api/v1/_ping" && req.method === "POST") {
+        if (!authToken) {
+          // Hub started without auth token - reject all mutations
+          return new Response(
+            JSON.stringify({ error: "Service unavailable", code: "NO_AUTH_CONFIGURED" }),
+            { status: 503, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        const authResult = requireAuth(req, authToken);
+        if (authResult.ok === false) {
+          return authResult.response;
+        }
+
+        // Authenticated - return pong
+        return Response.json({ pong: true, instance_id: instanceId });
       }
 
       // 404 for all other routes

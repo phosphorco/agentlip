@@ -1,10 +1,53 @@
 // Ring 1: Kernel (SQLite schema + migrations + invariants)
 // Implemented in Phase 0.
+//
+// Exports:
+// - openDb, runMigrations, isFtsAvailable (schema management)
+// - insertEvent, getLatestEventId, replayEvents, etc. (events.ts)
+// - listChannels, listTopicsByChannel, listMessages, etc. (queries.ts)
 
 import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
 import { copyFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+
+// Re-export events module
+export {
+  insertEvent,
+  getLatestEventId,
+  replayEvents,
+  getEventById,
+  countEventsInRange,
+  type EventScopes,
+  type EventEntity,
+  type InsertEventOptions,
+  type EventRow,
+  type ParsedEvent,
+  type ReplayEventsOptions,
+} from "./events";
+
+// Re-export queries module
+export {
+  listChannels,
+  getChannelById,
+  getChannelByName,
+  listTopicsByChannel,
+  getTopicById,
+  getTopicByTitle,
+  listMessages,
+  tailMessages,
+  getMessageById,
+  listTopicAttachments,
+  getAttachmentById,
+  findAttachmentByDedupeKey,
+  type Channel,
+  type Topic,
+  type Message,
+  type TopicAttachment,
+  type PaginationOptions,
+  type MessageQueryOptions,
+  type ListResult,
+} from "./queries";
 
 export const SCHEMA_VERSION = 1;
 

@@ -137,6 +137,16 @@ export {
   type WsHandlers,
 } from "./wsEndpoint";
 
+// Re-export config utilities
+export {
+  loadWorkspaceConfig,
+  validateWorkspaceConfig,
+  validatePluginModulePath,
+  type WorkspaceConfig,
+  type PluginConfig,
+  type LoadConfigResult,
+} from "./config";
+
 export interface StartHubOptions {
   host?: string;
   port?: number;

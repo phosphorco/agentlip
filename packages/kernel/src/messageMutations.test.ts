@@ -928,3 +928,213 @@ describe("Event replay correctness", () => {
     db.close();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Failure injection tests (Gate B: atomicity)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("Failure injection: atomicity", () => {
+  test("editMessage: aborted event insert leaves message state unchanged", () => {
+    const { db } = setupTestDb();
+
+    createChannel(db, "ch_1", "general");
+    createTopic(db, "topic_1", "ch_1", "Test Topic");
+    const msgId = nextMsgId();
+    createMessage(db, msgId, "topic_1", "ch_1", "Original content");
+
+    // Snapshot state before mutation
+    const messageBefore = getMessageById(db, msgId);
+    const eventsBefore = getLatestEventId(db);
+
+    // Install trigger to abort all inserts into events table
+    db.run(`
+      CREATE TRIGGER IF NOT EXISTS fail_events_insert
+      BEFORE INSERT ON events
+      BEGIN
+        SELECT RAISE(ABORT, 'Simulated event insert failure');
+      END;
+    `);
+
+    try {
+      // Attempt to edit message (should fail during event insert)
+      editMessage({
+        db,
+        messageId: msgId,
+        newContentRaw: "Updated content",
+      });
+
+      // Should not reach here
+      expect.unreachable("editMessage should have thrown due to event insert failure");
+    } catch (err: any) {
+      // Expect transaction to abort
+      expect(err.message).toContain("Simulated event insert failure");
+    } finally {
+      // Remove trigger
+      db.run("DROP TRIGGER IF EXISTS fail_events_insert");
+    }
+
+    // Verify message state unchanged (atomicity: state + event commit together)
+    const messageAfter = getMessageById(db, msgId);
+    expect(messageAfter!.content_raw).toBe(messageBefore!.content_raw);
+    expect(messageAfter!.version).toBe(messageBefore!.version);
+    expect(messageAfter!.edited_at).toBe(messageBefore!.edited_at);
+
+    // Verify no new events inserted
+    const eventsAfter = getLatestEventId(db);
+    expect(eventsAfter).toBe(eventsBefore);
+
+    db.close();
+  });
+
+  test("tombstoneDeleteMessage: aborted event insert leaves message state unchanged", () => {
+    const { db } = setupTestDb();
+
+    createChannel(db, "ch_1", "general");
+    createTopic(db, "topic_1", "ch_1", "Test Topic");
+    const msgId = nextMsgId();
+    createMessage(db, msgId, "topic_1", "ch_1", "Secret content");
+
+    const messageBefore = getMessageById(db, msgId);
+    const eventsBefore = getLatestEventId(db);
+
+    // Install failure trigger
+    db.run(`
+      CREATE TRIGGER IF NOT EXISTS fail_events_insert
+      BEFORE INSERT ON events
+      BEGIN
+        SELECT RAISE(ABORT, 'Simulated event insert failure');
+      END;
+    `);
+
+    try {
+      tombstoneDeleteMessage({
+        db,
+        messageId: msgId,
+        actor: "admin",
+      });
+      expect.unreachable("tombstoneDeleteMessage should have thrown");
+    } catch (err: any) {
+      expect(err.message).toContain("Simulated event insert failure");
+    } finally {
+      db.run("DROP TRIGGER IF EXISTS fail_events_insert");
+    }
+
+    // Verify message NOT deleted (atomicity)
+    const messageAfter = getMessageById(db, msgId);
+    expect(messageAfter!.deleted_at).toBeNull();
+    expect(messageAfter!.deleted_by).toBeNull();
+    expect(messageAfter!.content_raw).toBe(messageBefore!.content_raw);
+    expect(messageAfter!.version).toBe(messageBefore!.version);
+
+    // Verify no new events
+    const eventsAfter = getLatestEventId(db);
+    expect(eventsAfter).toBe(eventsBefore);
+
+    db.close();
+  });
+
+  test("retopicMessage: aborted event insert leaves all messages unchanged", () => {
+    const { db } = setupTestDb();
+
+    createChannel(db, "ch_1", "general");
+    createTopic(db, "topic_a", "ch_1", "Topic A");
+    createTopic(db, "topic_b", "ch_1", "Topic B");
+
+    const msg1 = nextMsgId();
+    const msg2 = nextMsgId();
+    const msg3 = nextMsgId();
+    createMessage(db, msg1, "topic_a", "ch_1", "Message 1");
+    createMessage(db, msg2, "topic_a", "ch_1", "Message 2");
+    createMessage(db, msg3, "topic_a", "ch_1", "Message 3");
+
+    // Snapshot state
+    const msg1Before = getMessageById(db, msg1);
+    const msg2Before = getMessageById(db, msg2);
+    const msg3Before = getMessageById(db, msg3);
+    const eventsBefore = getLatestEventId(db);
+
+    // Install failure trigger
+    db.run(`
+      CREATE TRIGGER IF NOT EXISTS fail_events_insert
+      BEFORE INSERT ON events
+      BEGIN
+        SELECT RAISE(ABORT, 'Simulated event insert failure');
+      END;
+    `);
+
+    try {
+      // Attempt to move all messages (should fail on first event insert)
+      retopicMessage({
+        db,
+        messageId: msg1,
+        toTopicId: "topic_b",
+        mode: "all",
+      });
+      expect.unreachable("retopicMessage should have thrown");
+    } catch (err: any) {
+      expect(err.message).toContain("Simulated event insert failure");
+    } finally {
+      db.run("DROP TRIGGER IF EXISTS fail_events_insert");
+    }
+
+    // Verify all messages still in topic_a (atomicity: all-or-nothing)
+    const msg1After = getMessageById(db, msg1);
+    const msg2After = getMessageById(db, msg2);
+    const msg3After = getMessageById(db, msg3);
+
+    expect(msg1After!.topic_id).toBe("topic_a");
+    expect(msg2After!.topic_id).toBe("topic_a");
+    expect(msg3After!.topic_id).toBe("topic_a");
+
+    // Verify versions unchanged
+    expect(msg1After!.version).toBe(msg1Before!.version);
+    expect(msg2After!.version).toBe(msg2Before!.version);
+    expect(msg3After!.version).toBe(msg3Before!.version);
+
+    // Verify no new events
+    const eventsAfter = getLatestEventId(db);
+    expect(eventsAfter).toBe(eventsBefore);
+
+    db.close();
+  });
+
+  test("editMessage: conflict detection prevents partial state change", () => {
+    const { db } = setupTestDb();
+
+    createChannel(db, "ch_1", "general");
+    createTopic(db, "topic_1", "ch_1", "Test Topic");
+    const msgId = nextMsgId();
+    createMessage(db, msgId, "topic_1", "ch_1", "Original");
+
+    // First edit to bump version
+    editMessage({ db, messageId: msgId, newContentRaw: "Updated v2" });
+
+    const messageBefore = getMessageById(db, msgId);
+    const eventsBefore = getLatestEventId(db);
+
+    // Attempt edit with stale version (should fail before any DB change)
+    try {
+      editMessage({
+        db,
+        messageId: msgId,
+        newContentRaw: "Stale update",
+        expectedVersion: 1, // Stale!
+      });
+      expect.unreachable("Should have thrown VersionConflictError");
+    } catch (err: any) {
+      expect(err).toBeInstanceOf(VersionConflictError);
+    }
+
+    // Verify message unchanged
+    const messageAfter = getMessageById(db, msgId);
+    expect(messageAfter!.content_raw).toBe(messageBefore!.content_raw);
+    expect(messageAfter!.version).toBe(messageBefore!.version);
+    expect(messageAfter!.edited_at).toBe(messageBefore!.edited_at);
+
+    // Verify no new events
+    const eventsAfter = getLatestEventId(db);
+    expect(eventsAfter).toBe(eventsBefore);
+
+    db.close();
+  });
+});

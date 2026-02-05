@@ -10,7 +10,7 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { unlinkSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { unlinkSync, existsSync, mkdirSync, readdirSync, copyFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { openDb, runMigrations, isFtsAvailable, SCHEMA_VERSION } from "./index";
 
@@ -24,15 +24,17 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (existsSync(TEST_DIR)) {
-    for (const file of readdirSync(TEST_DIR)) {
-      const filePath = join(TEST_DIR, file);
-      try {
-        unlinkSync(filePath);
-      } catch {
-        // Ignore cleanup errors
-      }
-    }
+  // Clean up any temp files/directories created during tests.
+  // Use recursive rm to handle nested directories (e.g. migration fixture dirs).
+  try {
+    rmSync(TEST_DIR, { recursive: true, force: true });
+  } catch {
+    // Ignore cleanup errors
+  }
+
+  // Recreate directory for next test
+  if (!existsSync(TEST_DIR)) {
+    mkdirSync(TEST_DIR, { recursive: true });
   }
 });
 
@@ -547,5 +549,227 @@ describe("Migration Idempotency", () => {
     expect(version?.value).toBe("1");
     
     db.close();
+  });
+});
+
+describe("Migration Edge Cases", () => {
+  test("backupBeforeMigration behavior: no backup for v0→v1 (fresh DB)", () => {
+    // Current implementation: backups are only created when currentVersion > 0
+    // For the v0→v1 migration, currentVersion is 0, so no backup is created
+    // This is intentional: v0 = "no schema yet" = fresh DB
+    
+    const dbPath = join(TEST_DIR, "backup-v0-test.db");
+    const db = openDb({ dbPath });
+    
+    // Create a minimal meta table with schema_version=0
+    db.exec(`
+      CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
+      INSERT INTO meta (key, value) VALUES ('schema_version', '0');
+      INSERT INTO meta (key, value) VALUES ('db_id', 'test-uuid');
+      CREATE TABLE dummy (id TEXT PRIMARY KEY) STRICT;
+      INSERT INTO dummy (id) VALUES ('pre-migration-data');
+    `);
+    
+    db.close();
+    const db2 = openDb({ dbPath });
+    
+    const version = db2
+      .query<{ value: string }, []>("SELECT value FROM meta WHERE key = 'schema_version'")
+      .get();
+    expect(version?.value).toBe("0");
+    
+    // Run migrations - no backup for v0
+    runMigrations({
+      db: db2,
+      migrationsDir: MIGRATIONS_DIR,
+      enableFts: false,
+    });
+    
+    db2.close();
+    
+    // Verify NO backup was created
+    const files = readdirSync(TEST_DIR);
+    const backupFiles = files.filter(f => f.startsWith("backup-v0-test.db.backup-"));
+    expect(backupFiles.length).toBe(0);
+  });
+
+  test("backupBeforeMigration unit test: verify backup file creation", () => {
+    // Tests the backup file creation logic directly
+    const dbPath = join(TEST_DIR, "backup-unit-test.db");
+    const db = openDb({ dbPath });
+    
+    db.exec(`
+      CREATE TABLE test_data (id INTEGER PRIMARY KEY, value TEXT);
+      INSERT INTO test_data (value) VALUES ('test-value-1');
+    `);
+    
+    // Close and ensure WAL is checkpointed
+    db.close();
+    
+    // Simulate backup creation (same logic as backupBeforeMigration)
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const backupPath = `${dbPath}.backup-v0-${timestamp}`;
+    
+    // Verify source file exists
+    expect(existsSync(dbPath)).toBe(true);
+    
+    // Create backup
+    copyFileSync(dbPath, backupPath);
+    
+    // Verify backup file exists
+    expect(existsSync(backupPath)).toBe(true);
+    
+    // Verify filename format matches expected pattern
+    expect(backupPath).toMatch(/\.backup-v0-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-/);
+    
+    // Cleanup - delete backup file
+    if (existsSync(backupPath)) {
+      unlinkSync(backupPath);
+    }
+  });
+
+  test("Missing migration file throws clear error message", () => {
+    const dbPath = join(TEST_DIR, "missing-migration-test.db");
+    const db = openDb({ dbPath });
+    
+    const emptyMigrationsDir = join(TEST_DIR, "empty-migrations");
+    if (!existsSync(emptyMigrationsDir)) {
+      mkdirSync(emptyMigrationsDir, { recursive: true });
+    }
+    
+    // Should throw when migration file is not found
+    expect(() => {
+      runMigrations({
+        db,
+        migrationsDir: emptyMigrationsDir,
+        enableFts: false,
+      });
+    }).toThrow(/Migration file not found/);
+    
+    db.close();
+  });
+
+  test("FTS migration can be re-run safely when enableFts=true", () => {
+    const dbPath = join(TEST_DIR, "fts-rerun-test.db");
+    const db = openDb({ dbPath });
+    
+    // First run with FTS enabled
+    const result1 = runMigrations({
+      db,
+      migrationsDir: MIGRATIONS_DIR,
+      enableFts: true,
+    });
+    
+    expect(result1.appliedMigrations).toContain("0001_schema_v1.sql");
+    
+    // If FTS was successfully created, verify it's tracked
+    if (result1.ftsAvailable) {
+      expect(result1.appliedMigrations).toContain("0001_schema_v1_fts.sql");
+    }
+    
+    // Second run with FTS enabled should not re-apply FTS migration
+    const result2 = runMigrations({
+      db,
+      migrationsDir: MIGRATIONS_DIR,
+      enableFts: true,
+    });
+    
+    // Core migration already applied
+    expect(result2.appliedMigrations).not.toContain("0001_schema_v1.sql");
+    
+    // FTS migration should not be re-applied if already available
+    if (result1.ftsAvailable) {
+      expect(result2.appliedMigrations).not.toContain("0001_schema_v1_fts.sql");
+      expect(result2.ftsAvailable).toBe(true);
+    }
+    
+    db.close();
+  });
+
+  test("FTS migration handles missing FTS file gracefully", () => {
+    const dbPath = join(TEST_DIR, "fts-missing-test.db");
+    const db = openDb({ dbPath });
+    
+    const noFtsMigrationsDir = join(TEST_DIR, "no-fts-migrations");
+    if (!existsSync(noFtsMigrationsDir)) {
+      mkdirSync(noFtsMigrationsDir, { recursive: true });
+    }
+    
+    // Copy only the base migration, not the FTS one
+    const baseMigrationPath = join(MIGRATIONS_DIR, "0001_schema_v1.sql");
+    const destMigrationPath = join(noFtsMigrationsDir, "0001_schema_v1.sql");
+    copyFileSync(baseMigrationPath, destMigrationPath);
+    
+    // Run with FTS enabled but file missing
+    const result = runMigrations({
+      db,
+      migrationsDir: noFtsMigrationsDir,
+      enableFts: true,
+    });
+    
+    // Base migration should succeed
+    expect(result.appliedMigrations).toContain("0001_schema_v1.sql");
+    
+    // FTS should report error gracefully
+    expect(result.ftsAvailable).toBe(false);
+    expect(result.ftsError).toContain("FTS migration file not found");
+    
+    db.close();
+  });
+
+  test("FTS migration on/off interactions: enable after initial disable", () => {
+    const dbPath = join(TEST_DIR, "fts-toggle-test.db");
+    const db = openDb({ dbPath });
+    
+    // First run: disable FTS
+    const result1 = runMigrations({
+      db,
+      migrationsDir: MIGRATIONS_DIR,
+      enableFts: false,
+    });
+    
+    expect(result1.appliedMigrations).toContain("0001_schema_v1.sql");
+    expect(result1.ftsAvailable).toBe(false);
+    expect(isFtsAvailable(db)).toBe(false);
+    
+    // Second run: enable FTS
+    const result2 = runMigrations({
+      db,
+      migrationsDir: MIGRATIONS_DIR,
+      enableFts: true,
+    });
+    
+    // Should apply FTS migration if SQLite supports it
+    if (result2.ftsAvailable) {
+      expect(result2.appliedMigrations).toContain("0001_schema_v1_fts.sql");
+      expect(isFtsAvailable(db)).toBe(true);
+    } else {
+      // If FTS not available in SQLite build, error should be reported
+      expect(result2.ftsError).toBeDefined();
+    }
+    
+    db.close();
+  });
+
+  test("Backup not created for fresh DB (schema_version=0 but no existing file)", () => {
+    const dbPath = join(TEST_DIR, "fresh-no-backup-test.db");
+    const db = openDb({ dbPath });
+    
+    // Fresh database (no meta table yet)
+    const result = runMigrations({
+      db,
+      migrationsDir: MIGRATIONS_DIR,
+      enableFts: false,
+    });
+    
+    expect(result.appliedMigrations).toContain("0001_schema_v1.sql");
+    
+    db.close();
+    
+    // No backup should be created for fresh init
+    const files = readdirSync(TEST_DIR);
+    const backupFiles = files.filter(f => f.startsWith("fresh-no-backup-test.db.backup-"));
+    
+    expect(backupFiles.length).toBe(0);
   });
 });

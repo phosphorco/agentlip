@@ -887,6 +887,355 @@ describe("API v1 - Input Validation", () => {
   });
 });
 
+describe("Failure injection: API conflict scenarios", () => {
+  let db: Database;
+  let ctx: ApiV1Context;
+  let channelId: string;
+  let topicId: string;
+
+  beforeEach(async () => {
+    db = createTestDb();
+    ctx = createTestContext(db);
+
+    // Setup channel and topic
+    const channelResponse = await handleApiV1(
+      createRequest(
+        "POST",
+        "/api/v1/channels",
+        { name: "general" },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+    const channelData: any = await parseResponse(channelResponse);
+    channelId = channelData.channel.id;
+
+    const topicResponse = await handleApiV1(
+      createRequest(
+        "POST",
+        "/api/v1/topics",
+        { channel_id: channelId, title: "Test Topic" },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+    const topicData: any = await parseResponse(topicResponse);
+    topicId = topicData.topic.id;
+  });
+
+  test("edit conflict: stale version prevents state change and event insertion", async () => {
+    // Create message
+    const createResponse = await handleApiV1(
+      createRequest(
+        "POST",
+        "/api/v1/messages",
+        {
+          topic_id: topicId,
+          sender: "agent-1",
+          content_raw: "Original content",
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+    const createData: any = await parseResponse(createResponse);
+    const messageId = createData.message.id;
+
+    // Edit to bump version to 2
+    await handleApiV1(
+      createRequest(
+        "PATCH",
+        `/api/v1/messages/${messageId}`,
+        {
+          op: "edit",
+          content_raw: "Updated content",
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+
+    // Get current state
+    const messageBefore = db
+      .query("SELECT * FROM messages WHERE id = ?")
+      .get(messageId) as any;
+    const eventsCountBefore = db
+      .query("SELECT COUNT(*) as count FROM events")
+      .get() as any;
+
+    // Attempt edit with stale version
+    const conflictResponse = await handleApiV1(
+      createRequest(
+        "PATCH",
+        `/api/v1/messages/${messageId}`,
+        {
+          op: "edit",
+          content_raw: "Stale update",
+          expected_version: 1, // Stale!
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+
+    // Verify 409 conflict response
+    expect(conflictResponse.status).toBe(409);
+    const conflictData: any = await parseResponse(conflictResponse);
+    expect(conflictData.code).toBe("VERSION_CONFLICT");
+    expect(conflictData.details.current).toBe(2);
+
+    // Verify message state unchanged
+    const messageAfter = db
+      .query("SELECT * FROM messages WHERE id = ?")
+      .get(messageId) as any;
+    expect(messageAfter.content_raw).toBe(messageBefore.content_raw);
+    expect(messageAfter.version).toBe(messageBefore.version);
+    expect(messageAfter.edited_at).toBe(messageBefore.edited_at);
+
+    // Verify no new events inserted
+    const eventsCountAfter = db
+      .query("SELECT COUNT(*) as count FROM events")
+      .get() as any;
+    expect(eventsCountAfter.count).toBe(eventsCountBefore.count);
+  });
+
+  test("delete conflict: stale version prevents state change and event insertion", async () => {
+    // Create message
+    const createResponse = await handleApiV1(
+      createRequest(
+        "POST",
+        "/api/v1/messages",
+        {
+          topic_id: topicId,
+          sender: "agent-1",
+          content_raw: "To be deleted",
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+    const createData: any = await parseResponse(createResponse);
+    const messageId = createData.message.id;
+
+    // Edit to bump version to 2
+    await handleApiV1(
+      createRequest(
+        "PATCH",
+        `/api/v1/messages/${messageId}`,
+        {
+          op: "edit",
+          content_raw: "Updated",
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+
+    // Get current state
+    const messageBefore = db
+      .query("SELECT * FROM messages WHERE id = ?")
+      .get(messageId) as any;
+    const eventsCountBefore = db
+      .query("SELECT COUNT(*) as count FROM events")
+      .get() as any;
+
+    // Attempt delete with stale version
+    const conflictResponse = await handleApiV1(
+      createRequest(
+        "PATCH",
+        `/api/v1/messages/${messageId}`,
+        {
+          op: "delete",
+          actor: "agent-1",
+          expected_version: 1, // Stale!
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+
+    // Verify 409 conflict response
+    expect(conflictResponse.status).toBe(409);
+    const conflictData: any = await parseResponse(conflictResponse);
+    expect(conflictData.code).toBe("VERSION_CONFLICT");
+
+    // Verify message NOT deleted (state unchanged)
+    const messageAfter = db
+      .query("SELECT * FROM messages WHERE id = ?")
+      .get(messageId) as any;
+    expect(messageAfter.deleted_at).toBeNull();
+    expect(messageAfter.deleted_by).toBeNull();
+    expect(messageAfter.content_raw).toBe(messageBefore.content_raw);
+    expect(messageAfter.version).toBe(messageBefore.version);
+
+    // Verify no new events
+    const eventsCountAfter = db
+      .query("SELECT COUNT(*) as count FROM events")
+      .get() as any;
+    expect(eventsCountAfter.count).toBe(eventsCountBefore.count);
+  });
+
+  test("retopic conflict: stale version prevents state change and event insertion", async () => {
+    // Create second topic
+    const topic2Response = await handleApiV1(
+      createRequest(
+        "POST",
+        "/api/v1/topics",
+        { channel_id: channelId, title: "Topic 2" },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+    const topic2Data: any = await parseResponse(topic2Response);
+    const topicId2 = topic2Data.topic.id;
+
+    // Create message
+    const createResponse = await handleApiV1(
+      createRequest(
+        "POST",
+        "/api/v1/messages",
+        {
+          topic_id: topicId,
+          sender: "agent-1",
+          content_raw: "Message to move",
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+    const createData: any = await parseResponse(createResponse);
+    const messageId = createData.message.id;
+
+    // Edit to bump version to 2
+    await handleApiV1(
+      createRequest(
+        "PATCH",
+        `/api/v1/messages/${messageId}`,
+        {
+          op: "edit",
+          content_raw: "Updated",
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+
+    // Get current state
+    const messageBefore = db
+      .query("SELECT * FROM messages WHERE id = ?")
+      .get(messageId) as any;
+    const eventsCountBefore = db
+      .query("SELECT COUNT(*) as count FROM events")
+      .get() as any;
+
+    // Attempt retopic with stale version
+    const conflictResponse = await handleApiV1(
+      createRequest(
+        "PATCH",
+        `/api/v1/messages/${messageId}`,
+        {
+          op: "move_topic",
+          to_topic_id: topicId2,
+          mode: "one",
+          expected_version: 1, // Stale!
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+
+    // Verify 409 conflict response
+    expect(conflictResponse.status).toBe(409);
+    const conflictData: any = await parseResponse(conflictResponse);
+    expect(conflictData.code).toBe("VERSION_CONFLICT");
+
+    // Verify message NOT moved (still in original topic)
+    const messageAfter = db
+      .query("SELECT * FROM messages WHERE id = ?")
+      .get(messageId) as any;
+    expect(messageAfter.topic_id).toBe(messageBefore.topic_id);
+    expect(messageAfter.version).toBe(messageBefore.version);
+
+    // Verify no new events
+    const eventsCountAfter = db
+      .query("SELECT COUNT(*) as count FROM events")
+      .get() as any;
+    expect(eventsCountAfter.count).toBe(eventsCountBefore.count);
+  });
+
+  test("concurrent edit conflict: second edit fails without changing state", async () => {
+    // Create message
+    const createResponse = await handleApiV1(
+      createRequest(
+        "POST",
+        "/api/v1/messages",
+        {
+          topic_id: topicId,
+          sender: "agent-1",
+          content_raw: "Original",
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+    const createData: any = await parseResponse(createResponse);
+    const messageId = createData.message.id;
+
+    // Simulate concurrent edits: both clients read version 1
+    const edit1Response = await handleApiV1(
+      createRequest(
+        "PATCH",
+        `/api/v1/messages/${messageId}`,
+        {
+          op: "edit",
+          content_raw: "Edit by client 1",
+          expected_version: 1,
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+
+    expect(edit1Response.status).toBe(200);
+    const edit1Data: any = await parseResponse(edit1Response);
+    expect(edit1Data.message.version).toBe(2);
+
+    // Second client tries to edit with version 1 (should fail)
+    const eventsCountBefore = db
+      .query("SELECT COUNT(*) as count FROM events")
+      .get() as any;
+
+    const edit2Response = await handleApiV1(
+      createRequest(
+        "PATCH",
+        `/api/v1/messages/${messageId}`,
+        {
+          op: "edit",
+          content_raw: "Edit by client 2",
+          expected_version: 1,
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+
+    expect(edit2Response.status).toBe(409);
+
+    // Verify client 1's edit persisted
+    const messageAfter = db
+      .query("SELECT * FROM messages WHERE id = ?")
+      .get(messageId) as any;
+    expect(messageAfter.content_raw).toBe("Edit by client 1");
+    expect(messageAfter.version).toBe(2);
+
+    // Verify only one edit event was created
+    const eventsCountAfter = db
+      .query("SELECT COUNT(*) as count FROM events")
+      .get() as any;
+    expect(eventsCountAfter.count).toBe(eventsCountBefore.count);
+  });
+});
+
 describe("API v1 - Rate Limiting", () => {
   let db: Database;
   let ctx: ApiV1Context;

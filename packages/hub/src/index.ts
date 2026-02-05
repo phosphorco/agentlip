@@ -23,6 +23,9 @@ import {
   type ServerJsonData,
 } from "./serverJson";
 import { generateAuthToken } from "./authToken";
+import { loadWorkspaceConfig, type WorkspaceConfig } from "./config";
+import { runLinkifierPluginsForMessage } from "./linkifierDerived";
+import { runExtractorPluginsForMessage } from "./extractorDerived";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Structured JSON logger
@@ -329,6 +332,19 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
     }
   }
 
+  // Load workspace config (zulip.config.ts) in daemon mode (optional file)
+  let workspaceConfig: WorkspaceConfig | null = null;
+  if (daemonMode && workspaceRoot) {
+    try {
+      const loaded = await loadWorkspaceConfig(workspaceRoot);
+      workspaceConfig = loaded?.config ?? null;
+    } catch (err) {
+      // Config load failed - release lock and abort startup
+      await releaseWriterLock({ workspaceRoot });
+      throw err;
+    }
+  }
+
   // Open database (default: in-memory for tests) and apply migrations
   const effectiveMigrationsDir =
     migrationsDir ?? join(import.meta.dir, "../../../migrations");
@@ -372,6 +388,83 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
     authToken: authToken ?? "",
     hub: wsHub,
   });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Plugin derived pipelines (linkifiers/extractors)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  const hasEnabledLinkifiers =
+    workspaceRoot != null &&
+    workspaceConfig?.plugins?.some(
+      (p) => p.enabled && p.type === "linkifier" && typeof p.module === "string"
+    ) === true;
+
+  const hasEnabledExtractors =
+    workspaceRoot != null &&
+    workspaceConfig?.plugins?.some(
+      (p) => p.enabled && p.type === "extractor" && typeof p.module === "string"
+    ) === true;
+
+  const getEventInfoStmt = db.query<
+    { name: string; entity_id: string },
+    [number]
+  >(
+    "SELECT name, entity_id FROM events WHERE event_id = ?"
+  );
+
+  function scheduleDerivedPluginsForMessage(messageId: string): void {
+    if (!workspaceRoot || !workspaceConfig) return;
+    if (!hasEnabledLinkifiers && !hasEnabledExtractors) return;
+
+    // Defer to avoid blocking the request that triggered the mutation.
+    setTimeout(() => {
+      if (hasEnabledLinkifiers) {
+        void runLinkifierPluginsForMessage({
+          db,
+          workspaceRoot,
+          workspaceConfig,
+          messageId,
+          onEventIds: (ids) => wsHub.publishEventIds(ids),
+        }).catch((err) => {
+          if (!isTestEnvironment()) {
+            console.warn(
+              `[plugins] linkifier pipeline failed for message ${messageId}: ${err?.message ?? String(err)}`
+            );
+          }
+        });
+      }
+
+      if (hasEnabledExtractors) {
+        void runExtractorPluginsForMessage({
+          db,
+          workspaceRoot,
+          workspaceConfig,
+          messageId,
+          onEventIds: (ids) => wsHub.publishEventIds(ids),
+        }).catch((err) => {
+          if (!isTestEnvironment()) {
+            console.warn(
+              `[plugins] extractor pipeline failed for message ${messageId}: ${err?.message ?? String(err)}`
+            );
+          }
+        });
+      }
+    }, 0);
+  }
+
+  function maybeSchedulePluginsForEventIds(eventIds: number[]): void {
+    if (!workspaceRoot || !workspaceConfig) return;
+    if (!hasEnabledLinkifiers && !hasEnabledExtractors) return;
+
+    for (const eventId of eventIds) {
+      const row = getEventInfoStmt.get(eventId);
+      if (!row) continue;
+
+      if (row.name === "message.created" || row.name === "message.edited") {
+        scheduleDerivedPluginsForMessage(row.entity_id);
+      }
+    }
+  }
 
   // Track process start time for uptime calculation
   const startTimeMs = Date.now();
@@ -611,6 +704,7 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
           onEventIds(eventIds) {
             capturedEventIds = eventIds;
             wsHub.publishEventIds(eventIds);
+            maybeSchedulePluginsForEventIds(eventIds);
           },
         };
 

@@ -585,6 +585,72 @@ describe("Plugin Runtime - Output Validation", () => {
     }
   });
 
+  test("rejects enrichment spans where end == start", async () => {
+    const zeroLengthSpanPlugin = `
+      export default {
+        name: "zero-length-span",
+        version: "1.0.0",
+        async enrich(input) {
+          return [{
+            kind: "url",
+            span: { start: 5, end: 5 }, // end == start (invalid)
+            data: {}
+          }];
+        }
+      };
+    `;
+
+    const pluginPath = await createTempPlugin(zeroLengthSpanPlugin);
+
+    try {
+      const result = await runPlugin<Enrichment[]>({
+        type: "linkifier",
+        modulePath: pluginPath,
+        input: testEnrichInput,
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe("INVALID_OUTPUT");
+      }
+    } finally {
+      await cleanupTempPlugin(pluginPath);
+    }
+  });
+
+  test("rejects enrichment spans with non-integer indices", async () => {
+    const floatSpanPlugin = `
+      export default {
+        name: "float-span",
+        version: "1.0.0",
+        async enrich(input) {
+          return [{
+            kind: "url",
+            span: { start: 0.5, end: 2 }, // start not integer
+            data: {}
+          }];
+        }
+      };
+    `;
+
+    const pluginPath = await createTempPlugin(floatSpanPlugin);
+
+    try {
+      const result = await runPlugin<Enrichment[]>({
+        type: "linkifier",
+        modulePath: pluginPath,
+        input: testEnrichInput,
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe("INVALID_OUTPUT");
+      }
+    } finally {
+      await cleanupTempPlugin(pluginPath);
+    }
+  });
+
   test("validates attachment value_json is object", async () => {
     const invalidAttachmentPlugin = `
       export default {
@@ -600,6 +666,39 @@ describe("Plugin Runtime - Output Validation", () => {
     `;
 
     const pluginPath = await createTempPlugin(invalidAttachmentPlugin);
+
+    try {
+      const result = await runPlugin<Attachment[]>({
+        type: "extractor",
+        modulePath: pluginPath,
+        input: testExtractInput,
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe("INVALID_OUTPUT");
+      }
+    } finally {
+      await cleanupTempPlugin(pluginPath);
+    }
+  });
+
+  test("rejects attachments with empty dedupe_key", async () => {
+    const emptyDedupeKeyPlugin = `
+      export default {
+        name: "empty-dedupe-key",
+        version: "1.0.0",
+        async extract(input) {
+          return [{
+            kind: "url",
+            value_json: { url: "https://example.com" },
+            dedupe_key: "" // empty string is invalid
+          }];
+        }
+      };
+    `;
+
+    const pluginPath = await createTempPlugin(emptyDedupeKeyPlugin);
 
     try {
       const result = await runPlugin<Attachment[]>({

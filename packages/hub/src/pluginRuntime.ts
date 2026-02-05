@@ -368,9 +368,11 @@ function isValidEnrichment(obj: unknown): obj is Enrichment {
     typeof e.span === "object" &&
     e.span !== null &&
     typeof e.span.start === "number" &&
+    Number.isInteger(e.span.start) &&
     typeof e.span.end === "number" &&
+    Number.isInteger(e.span.end) &&
     e.span.start >= 0 &&
-    e.span.end >= e.span.start &&
+    e.span.end > e.span.start &&
     typeof e.data === "object" &&
     e.data !== null &&
     !Array.isArray(e.data)
@@ -388,7 +390,8 @@ function isValidAttachment(obj: unknown): obj is Attachment {
     typeof a.value_json === "object" &&
     a.value_json !== null &&
     !Array.isArray(a.value_json) &&
-    (a.dedupe_key === undefined || typeof a.dedupe_key === "string")
+    (a.dedupe_key === undefined ||
+      (typeof a.dedupe_key === "string" && a.dedupe_key.trim().length > 0))
   );
 }
 

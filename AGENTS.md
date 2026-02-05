@@ -1,129 +1,142 @@
-<!-- br-agent-instructions-v1 -->
+# Agent Instructions for AgentChat
+
+## Orientation (read this first)
+
+This is a **Bun + TypeScript monorepo** with 6 workspace packages under `packages/`. No build step — TypeScript is executed directly by Bun. All SQL uses prepared statements. All tests use `bun:test`.
+
+```
+packages/
+  protocol/    # Shared types (error codes, health response)
+  kernel/      # SQLite schema, migrations, events, queries, mutations
+  workspace/   # Workspace discovery (.zulip/ upward walk)
+  hub/         # Bun HTTP+WS server, plugin runtime, UI
+  cli/         # Stateless CLI (agentchat)
+  client/      # TypeScript SDK (discovery, WS, typed events, mutations)
+```
+
+**Dependency rule:** `client` → `protocol` + `workspace`. `hub` → `protocol` + `kernel`. `cli` → `kernel` + `workspace`. Nothing depends on `hub` at compile time (test files may import its harness).
+
+## Dev Commands
+
+```bash
+bun test              # Full suite (725 tests, ~24s)
+bun test packages/hub # Test one package
+bun run typecheck     # tsc --noEmit (zero errors required)
+```
+
+Always run both before committing.
+
+## Testing Patterns
+
+**Unit tests** (kernel, protocol): import functions directly, use temp SQLite DBs.
+
+**Integration tests** (hub, client): use the shared harness:
+```typescript
+import { createTempWorkspace, startTestHub } from "../../hub/src/integrationHarness";
+
+const workspace = await createTempWorkspace();
+const hub = await startTestHub({ workspaceRoot: workspace.root, authToken: "test-token" });
+// ... test against hub.url ...
+await hub.stop();
+await workspace.cleanup();
+```
+
+**To create events in tests**, use the real API chain — never invent endpoints:
+```typescript
+import { createChannel, createTopic, sendMessage } from "@agentchat/client";
+const client = { baseUrl: hub.url, authToken: "test-token" };
+const ch = await createChannel(client, { name: "test-ch" });
+const tp = await createTopic(client, { channelId: ch.channel.id, title: "test-tp" });
+const msg = await sendMessage(client, { topicId: tp.topic.id, sender: "agent", contentRaw: "hello" });
+```
+
+## Key Design Decisions
+
+- **No hard deletes.** Messages are tombstoned (`deleted_at` set, content replaced). Events are immutable.
+- **Optimistic locking.** Edits accept `expected_version`; mismatch returns `VERSION_CONFLICT`.
+- **Plugin isolation.** Plugins run in Worker threads with timeouts + circuit breaker. No direct DB access. See `docs/adr/ADR-0005-plugin-isolation.md`.
+- **Staleness guard.** Derived data (enrichments, attachments from plugins) is checked for staleness before commit — version + deleted_at verified in same transaction.
+- **Additive-only schema.** New event types and fields must not break existing consumers.
+
+## Reference Docs
+
+- [docs/protocol.md](docs/protocol.md) — HTTP API endpoints, WS handshake, event types, error codes
+- [docs/ops.md](docs/ops.md) — Hub startup sequence, recovery, migrations
+- [docs/security.md](docs/security.md) — Threat model, auth, safe defaults
+- [AGENTLIP_PLAN.md](AGENTLIP_PLAN.md) — Full design plan (3400 lines, all decisions locked)
 
 ---
 
-## Beads Workflow Integration
+<!-- br-agent-instructions-v1 -->
 
-This project uses [beads_rust](https://github.com/Dicklesworthstone/beads_rust) (`br`/`bd`) for issue tracking. Issues are stored in `.beads/` and tracked in git.
+## Issue Tracking (beads)
 
-### Essential Commands
+This project uses [beads_rust](https://github.com/Dicklesworthstone/beads_rust) (`br`) for issue tracking. Issues are stored in `.beads/` and tracked in git.
+
+### Quick Reference
 
 ```bash
-# View ready issues (unblocked, not deferred)
-br ready              # or: bd ready
-
-# List and search
-br list --status=open # All open issues
-br show <id>          # Full issue details with dependencies
-br search "keyword"   # Full-text search
-
-# Create and update
-br create --title="..." --description="..." --type=task --priority=2
+br ready                  # Unblocked work (prefer this over br list)
+br show <id>              # Full details + dependencies
 br update <id> --status=in_progress
-br close <id> --reason="Completed"
-br close <id1> <id2>  # Close multiple issues at once
-
-# Sync with git
-br sync --flush-only  # Export DB to JSONL
-br sync --status      # Check sync status
+br close <id> --reason="..."
+br sync --flush-only      # Export to JSONL before committing
 ```
 
-### Workflow Pattern
+### Workflow
 
-1. **Start**: Run `br ready` to find actionable work
-2. **Claim**: Use `br update <id> --status=in_progress`
-3. **Work**: Implement the task
-4. **Complete**: Use `br close <id>`
-5. **Sync**: Always run `br sync --flush-only` at session end
+1. `br ready` → pick a task
+2. `br update <id> --status=in_progress`
+3. Implement + test + typecheck
+4. `br close <id> --reason="<what was done + verification>"` 
+5. `br sync --flush-only && git add .beads/ && git commit`
 
-### Key Concepts
-
-- **Dependencies**: Issues can block other issues. `br ready` shows only unblocked work.
-- **Priority**: P0=critical, P1=high, P2=medium, P3=low, P4=backlog (use numbers 0-4, not words)
-- **Types**: task, bug, feature, epic, chore, docs, question
-- **Blocking**: `br dep add <issue> <depends-on>` to add dependencies
-
-### Session Protocol
-
-**Before ending any session, run this checklist:**
+### Robot Views (for PM agents coordinating parallel work)
 
 ```bash
-git status              # Check what changed
-git add <files>         # Stage code changes
-br sync --flush-only    # Export beads changes to JSONL
-git commit -m "..."     # Commit everything
-git push                # Push to remote
+bv --robot-plan --format json     # Dependency-respecting execution tracks
+bv --robot-triage --format json   # Scored picks + unblockers
+br ready                          # Simple unblocked list (most useful)
 ```
 
-### Best Practices
-
-- Check `br ready` at session start to find available work
-- Update status as you work (in_progress → closed)
-- Create new issues with `br create` when you discover tasks
-- Use descriptive titles and set appropriate priority/type
-- Always sync before ending session
+**Tip:** `br ready` is more useful than `bv --robot-next` (which tends to pick top-level epics over actionable leaf tasks). Use `br show <id>` to inspect dependencies before claiming.
 
 <!-- end-br-agent-instructions -->
 
-<!-- bv-agent-instructions-v1 -->
-
 ---
 
-## Beads Workflow Integration
+## Lessons for PM Agents Using Background Tasks
 
-This project uses [beads_viewer](https://github.com/Dicklesworthstone/beads_viewer) for issue tracking. Issues are stored in `.beads/` and tracked in git.
+If you're orchestrating parallel background tasks (via `start_tasks`), these patterns were learned from building this project:
 
-### Essential Commands
+### Task prompt quality determines success rate
 
+**56% of tasks delivered clean, shippable code.** The rest needed fixes. The difference was how much concrete context the prompt contained.
+
+**Do:**
+- Include exact type signatures the task should produce or consume
+- Specify which existing functions to use for test setup (e.g., "use `createChannel` + `createTopic` + `sendMessage` to generate events")
+- Include the file paths AND the key facts extracted from those files
+
+**Don't:**
+- List 12+ file paths and expect the task to read and synthesize them all (it may timeout)
+- Let parallel tasks independently discover shared interfaces (they'll hallucinate)
+- Combine two unrelated deliverables in one task (the second one may not get written)
+
+### Sequencing rules
+
+- Tasks that define types/interfaces → run first
+- Tasks that write tests for another task's code → sequence after it
+- Docs tasks → pre-digest the facts in the prompt instead of giving raw file paths
+- Anything on the critical path → one focused deliverable per task
+
+### Always verify after integration
+
+After all tasks in a wave complete:
 ```bash
-# View issues (launches TUI - avoid in automated sessions)
-bv
-
-# CLI commands for agents (use these instead)
-bd ready              # Show issues ready to work (no blockers)
-bd list --status=open # All open issues
-bd show <id>          # Full issue details with dependencies
-bd create --title="..." --type=task --priority=2
-bd update <id> --status=in_progress
-bd close <id> --reason="Completed"
-bd close <id1> <id2>  # Close multiple issues at once
-bd sync               # Commit and push changes
+bun run typecheck              # Type errors from mismatched interfaces
+bun test packages/<modified>   # Catch broken tests before full suite
+bun test                       # Full suite
 ```
 
-### Workflow Pattern
-
-1. **Start**: Run `bd ready` to find actionable work
-2. **Claim**: Use `bd update <id> --status=in_progress`
-3. **Work**: Implement the task
-4. **Complete**: Use `bd close <id>`
-5. **Sync**: Always run `bd sync` at session end
-
-### Key Concepts
-
-- **Dependencies**: Issues can block other issues. `bd ready` shows only unblocked work.
-- **Priority**: P0=critical, P1=high, P2=medium, P3=low, P4=backlog (use numbers, not words)
-- **Types**: task, bug, feature, epic, question, docs
-- **Blocking**: `bd dep add <issue> <depends-on>` to add dependencies
-
-### Session Protocol
-
-**Before ending any session, run this checklist:**
-
-```bash
-git status              # Check what changed
-git add <files>         # Stage code changes
-bd sync                 # Commit beads changes
-git commit -m "..."     # Commit code
-bd sync                 # Commit any new beads changes
-git push                # Push to remote
-```
-
-### Best Practices
-
-- Check `bd ready` at session start to find available work
-- Update status as you work (in_progress → closed)
-- Create new issues with `bd create` when you discover tasks
-- Use descriptive titles and set appropriate priority/type
-- Always `bd sync` before ending session
-
-<!-- end-bv-agent-instructions -->
+Check barrel exports (`index.ts`) — tasks frequently forget to add their module to the re-export list.

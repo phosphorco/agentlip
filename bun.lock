@@ -12,8 +12,13 @@
     "packages/hub": {
       "name": "@agentchat/hub",
       "version": "0.0.0",
+      "bin": {
+        "agentchatd": "./src/agentchatd.ts",
+      },
       "dependencies": {
+        "@agentchat/kernel": "workspace:*",
         "@agentchat/protocol": "workspace:*",
+        "@agentchat/workspace": "workspace:*",
       },
     },
     "packages/kernel": {

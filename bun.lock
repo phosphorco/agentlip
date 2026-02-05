@@ -23,6 +23,14 @@
         "@agentchat/hub": "workspace:*",
       },
     },
+    "packages/client": {
+      "name": "@agentchat/client",
+      "version": "0.0.0",
+      "dependencies": {
+        "@agentchat/protocol": "workspace:*",
+        "@agentchat/workspace": "workspace:*",
+      },
+    },
     "packages/hub": {
       "name": "@agentchat/hub",
       "version": "0.0.0",
@@ -50,6 +58,8 @@
   },
   "packages": {
     "@agentchat/cli": ["@agentchat/cli@workspace:packages/cli"],
+
+    "@agentchat/client": ["@agentchat/client@workspace:packages/client"],
 
     "@agentchat/hub": ["@agentchat/hub@workspace:packages/hub"],
 

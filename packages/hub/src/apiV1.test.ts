@@ -759,6 +759,232 @@ describe("API v1 - Attachments", () => {
     expect(data.event_id).toBeNull();
   });
 
+  test("Idempotency (ADR-0007): retry insert with explicit dedupe_key returns same attachment.id, no new event", async () => {
+    // Count attachments and events before
+    const attachmentCountBefore = db
+      .query("SELECT COUNT(*) as count FROM topic_attachments")
+      .get() as any;
+    const eventCountBefore = db
+      .query("SELECT COUNT(*) as count FROM events")
+      .get() as any;
+
+    // First insert
+    const firstResponse = await handleApiV1(
+      createRequest(
+        "POST",
+        `/api/v1/topics/${topicId}/attachments`,
+        {
+          kind: "file",
+          key: "readme.md",
+          value_json: { path: "/tmp/readme.md", size: 1024 },
+          dedupe_key: "file:/tmp/readme.md",
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+
+    expect(firstResponse.status).toBe(201);
+    const firstData: any = await parseResponse(firstResponse);
+    const firstAttachmentId = firstData.attachment.id;
+    expect(firstData.event_id).toBeGreaterThan(0);
+
+    // Verify counts after first insert
+    const attachmentCountAfterFirst = db
+      .query("SELECT COUNT(*) as count FROM topic_attachments")
+      .get() as any;
+    const eventCountAfterFirst = db
+      .query("SELECT COUNT(*) as count FROM events")
+      .get() as any;
+
+    expect(attachmentCountAfterFirst.count).toBe(attachmentCountBefore.count + 1);
+    expect(eventCountAfterFirst.count).toBe(eventCountBefore.count + 1);
+
+    // Second insert (retry with same dedupe_key)
+    const secondResponse = await handleApiV1(
+      createRequest(
+        "POST",
+        `/api/v1/topics/${topicId}/attachments`,
+        {
+          kind: "file",
+          key: "readme.md",
+          value_json: { path: "/tmp/readme.md", size: 1024 },
+          dedupe_key: "file:/tmp/readme.md",
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+
+    expect(secondResponse.status).toBe(200);
+    const secondData: any = await parseResponse(secondResponse);
+
+    // Verify same attachment.id returned
+    expect(secondData.attachment.id).toBe(firstAttachmentId);
+
+    // Verify event_id is null (no new event)
+    expect(secondData.event_id).toBeNull();
+
+    // Verify counts unchanged (no new attachment or event)
+    const attachmentCountAfterSecond = db
+      .query("SELECT COUNT(*) as count FROM topic_attachments")
+      .get() as any;
+    const eventCountAfterSecond = db
+      .query("SELECT COUNT(*) as count FROM events")
+      .get() as any;
+
+    expect(attachmentCountAfterSecond.count).toBe(attachmentCountAfterFirst.count);
+    expect(eventCountAfterSecond.count).toBe(eventCountAfterFirst.count);
+
+    // Verify attachment data matches
+    expect(secondData.attachment.value_json).toEqual(firstData.attachment.value_json);
+    expect(secondData.attachment.dedupe_key).toBe("file:/tmp/readme.md");
+  });
+
+  test("Idempotency (ADR-0007): retry insert without dedupe_key uses computed hash and dedupes correctly", async () => {
+    // Count attachments and events before
+    const attachmentCountBefore = db
+      .query("SELECT COUNT(*) as count FROM topic_attachments")
+      .get() as any;
+    const eventCountBefore = db
+      .query("SELECT COUNT(*) as count FROM events")
+      .get() as any;
+
+    const attachmentValue = { url: "https://api.example.com/resource", method: "GET" };
+
+    // First insert (no dedupe_key provided)
+    const firstResponse = await handleApiV1(
+      createRequest(
+        "POST",
+        `/api/v1/topics/${topicId}/attachments`,
+        {
+          kind: "api_call",
+          value_json: attachmentValue,
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+
+    expect(firstResponse.status).toBe(201);
+    const firstData: any = await parseResponse(firstResponse);
+    const firstAttachmentId = firstData.attachment.id;
+    const computedDedupeKey = firstData.attachment.dedupe_key;
+
+    // Verify computed dedupe_key is JSON of value_json
+    expect(computedDedupeKey).toBe(JSON.stringify(attachmentValue));
+    expect(firstData.event_id).toBeGreaterThan(0);
+
+    // Verify counts after first insert
+    const attachmentCountAfterFirst = db
+      .query("SELECT COUNT(*) as count FROM topic_attachments")
+      .get() as any;
+    const eventCountAfterFirst = db
+      .query("SELECT COUNT(*) as count FROM events")
+      .get() as any;
+
+    expect(attachmentCountAfterFirst.count).toBe(attachmentCountBefore.count + 1);
+    expect(eventCountAfterFirst.count).toBe(eventCountBefore.count + 1);
+
+    // Second insert (same value_json, no dedupe_key)
+    const secondResponse = await handleApiV1(
+      createRequest(
+        "POST",
+        `/api/v1/topics/${topicId}/attachments`,
+        {
+          kind: "api_call",
+          value_json: attachmentValue,
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+
+    expect(secondResponse.status).toBe(200);
+    const secondData: any = await parseResponse(secondResponse);
+
+    // Verify same attachment.id returned
+    expect(secondData.attachment.id).toBe(firstAttachmentId);
+
+    // Verify event_id is null (no new event)
+    expect(secondData.event_id).toBeNull();
+
+    // Verify computed dedupe_key matches
+    expect(secondData.attachment.dedupe_key).toBe(computedDedupeKey);
+
+    // Verify counts unchanged
+    const attachmentCountAfterSecond = db
+      .query("SELECT COUNT(*) as count FROM topic_attachments")
+      .get() as any;
+    const eventCountAfterSecond = db
+      .query("SELECT COUNT(*) as count FROM events")
+      .get() as any;
+
+    expect(attachmentCountAfterSecond.count).toBe(attachmentCountAfterFirst.count);
+    expect(eventCountAfterSecond.count).toBe(eventCountAfterSecond.count);
+  });
+
+  test("Idempotency (ADR-0007): onEventIds hook not called when attachment is deduped", async () => {
+    // Track event IDs published via hook
+    const publishedEventIds: number[] = [];
+    const contextWithHook: ApiV1Context = {
+      ...ctx,
+      onEventIds: (eventIds: number[]) => {
+        publishedEventIds.push(...eventIds);
+      },
+    };
+
+    const attachmentValue = { tag: "important", priority: 1 };
+
+    // First insert (should call hook)
+    const firstResponse = await handleApiV1(
+      createRequest(
+        "POST",
+        `/api/v1/topics/${topicId}/attachments`,
+        {
+          kind: "metadata",
+          value_json: attachmentValue,
+          dedupe_key: "metadata:important:1",
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      contextWithHook
+    );
+
+    expect(firstResponse.status).toBe(201);
+    const firstData: any = await parseResponse(firstResponse);
+    expect(firstData.event_id).toBeGreaterThan(0);
+
+    // Verify hook was called with the event ID
+    expect(publishedEventIds.length).toBe(1);
+    expect(publishedEventIds[0]).toBe(firstData.event_id);
+
+    // Clear tracked event IDs
+    publishedEventIds.length = 0;
+
+    // Second insert (should NOT call hook)
+    const secondResponse = await handleApiV1(
+      createRequest(
+        "POST",
+        `/api/v1/topics/${topicId}/attachments`,
+        {
+          kind: "metadata",
+          value_json: attachmentValue,
+          dedupe_key: "metadata:important:1",
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      contextWithHook
+    );
+
+    expect(secondResponse.status).toBe(200);
+    const secondData: any = await parseResponse(secondResponse);
+    expect(secondData.event_id).toBeNull();
+
+    // Verify hook was NOT called (no new event IDs published)
+    expect(publishedEventIds.length).toBe(0);
+  });
+
   test("POST /api/v1/topics/:topic_id/attachments rejects oversized value_json (>16KB)", async () => {
     const largeValue = { data: "x".repeat(20000) };
     const req = createRequest(
@@ -786,6 +1012,306 @@ describe("API v1 - Attachments", () => {
     const response = await handleApiV1(req, ctx);
 
     expect(response.status).toBe(401);
+  });
+
+  test("POST url attachment accepts valid http URL", async () => {
+    const req = createRequest(
+      "POST",
+      `/api/v1/topics/${topicId}/attachments`,
+      {
+        kind: "url",
+        value_json: { url: "http://example.com/path?query=1" },
+      },
+      { Authorization: "Bearer test-token-12345" }
+    );
+    const response = await handleApiV1(req, ctx);
+
+    expect(response.status).toBe(201);
+    const data: any = await parseResponse(response);
+    expect(data.attachment.value_json.url).toBe("http://example.com/path?query=1");
+  });
+
+  test("POST url attachment accepts valid https URL", async () => {
+    const req = createRequest(
+      "POST",
+      `/api/v1/topics/${topicId}/attachments`,
+      {
+        kind: "url",
+        value_json: { url: "https://example.com" },
+      },
+      { Authorization: "Bearer test-token-12345" }
+    );
+    const response = await handleApiV1(req, ctx);
+
+    expect(response.status).toBe(201);
+  });
+
+  test("POST url attachment rejects javascript: protocol", async () => {
+    const req = createRequest(
+      "POST",
+      `/api/v1/topics/${topicId}/attachments`,
+      {
+        kind: "url",
+        value_json: { url: "javascript:alert('xss')" },
+      },
+      { Authorization: "Bearer test-token-12345" }
+    );
+    const response = await handleApiV1(req, ctx);
+
+    expect(response.status).toBe(400);
+    const data: any = await parseResponse(response);
+    expect(data.code).toBe("INVALID_INPUT");
+    expect(data.error).toContain("invalid characters or patterns");
+  });
+
+  test("POST url attachment rejects ftp: protocol", async () => {
+    const req = createRequest(
+      "POST",
+      `/api/v1/topics/${topicId}/attachments`,
+      {
+        kind: "url",
+        value_json: { url: "ftp://example.com/file" },
+      },
+      { Authorization: "Bearer test-token-12345" }
+    );
+    const response = await handleApiV1(req, ctx);
+
+    expect(response.status).toBe(400);
+    const data: any = await parseResponse(response);
+    expect(data.code).toBe("INVALID_INPUT");
+    expect(data.error).toContain("protocol must be http or https");
+  });
+
+  test("POST url attachment rejects file: protocol", async () => {
+    const req = createRequest(
+      "POST",
+      `/api/v1/topics/${topicId}/attachments`,
+      {
+        kind: "url",
+        value_json: { url: "file:///etc/passwd" },
+      },
+      { Authorization: "Bearer test-token-12345" }
+    );
+    const response = await handleApiV1(req, ctx);
+
+    expect(response.status).toBe(400);
+    const data: any = await parseResponse(response);
+    expect(data.code).toBe("INVALID_INPUT");
+  });
+
+  test("POST url attachment rejects overly long URL (>2048)", async () => {
+    const longUrl = "https://example.com/" + "x".repeat(2100);
+    const req = createRequest(
+      "POST",
+      `/api/v1/topics/${topicId}/attachments`,
+      {
+        kind: "url",
+        value_json: { url: longUrl },
+      },
+      { Authorization: "Bearer test-token-12345" }
+    );
+    const response = await handleApiV1(req, ctx);
+
+    expect(response.status).toBe(400);
+    const data: any = await parseResponse(response);
+    expect(data.code).toBe("INVALID_INPUT");
+    expect(data.error).toContain("exceeds maximum length");
+  });
+
+  test("POST url attachment rejects malformed URL", async () => {
+    const req = createRequest(
+      "POST",
+      `/api/v1/topics/${topicId}/attachments`,
+      {
+        kind: "url",
+        value_json: { url: "not a valid url" },
+      },
+      { Authorization: "Bearer test-token-12345" }
+    );
+    const response = await handleApiV1(req, ctx);
+
+    expect(response.status).toBe(400);
+    const data: any = await parseResponse(response);
+    expect(data.code).toBe("INVALID_INPUT");
+    expect(data.error).toContain("not a valid URL format");
+  });
+
+  test("POST url attachment rejects missing url field", async () => {
+    const req = createRequest(
+      "POST",
+      `/api/v1/topics/${topicId}/attachments`,
+      {
+        kind: "url",
+        value_json: { title: "No URL here" },
+      },
+      { Authorization: "Bearer test-token-12345" }
+    );
+    const response = await handleApiV1(req, ctx);
+
+    expect(response.status).toBe(400);
+    const data: any = await parseResponse(response);
+    expect(data.code).toBe("INVALID_INPUT");
+    expect(data.error).toContain("url field is required");
+  });
+
+  test("POST url attachment accepts valid title and description", async () => {
+    const req = createRequest(
+      "POST",
+      `/api/v1/topics/${topicId}/attachments`,
+      {
+        kind: "url",
+        value_json: {
+          url: "https://example.com",
+          title: "Example Site",
+          description: "A sample website for testing",
+        },
+      },
+      { Authorization: "Bearer test-token-12345" }
+    );
+    const response = await handleApiV1(req, ctx);
+
+    expect(response.status).toBe(201);
+    const data: any = await parseResponse(response);
+    expect(data.attachment.value_json.title).toBe("Example Site");
+    expect(data.attachment.value_json.description).toBe("A sample website for testing");
+  });
+
+  test("POST url attachment rejects title with <script> tag", async () => {
+    const req = createRequest(
+      "POST",
+      `/api/v1/topics/${topicId}/attachments`,
+      {
+        kind: "url",
+        value_json: {
+          url: "https://example.com",
+          title: "Malicious <script>alert('xss')</script>",
+        },
+      },
+      { Authorization: "Bearer test-token-12345" }
+    );
+    const response = await handleApiV1(req, ctx);
+
+    expect(response.status).toBe(400);
+    const data: any = await parseResponse(response);
+    expect(data.code).toBe("INVALID_INPUT");
+    expect(data.error).toContain("title");
+    expect(data.error).toContain("invalid characters or patterns");
+  });
+
+  test("POST url attachment rejects description with HTML tags", async () => {
+    const req = createRequest(
+      "POST",
+      `/api/v1/topics/${topicId}/attachments`,
+      {
+        kind: "url",
+        value_json: {
+          url: "https://example.com",
+          description: "Evil <img src=x onerror=alert(1)>",
+        },
+      },
+      { Authorization: "Bearer test-token-12345" }
+    );
+    const response = await handleApiV1(req, ctx);
+
+    expect(response.status).toBe(400);
+    const data: any = await parseResponse(response);
+    expect(data.code).toBe("INVALID_INPUT");
+    expect(data.error).toContain("description");
+  });
+
+  test("POST url attachment rejects overly long title (>500)", async () => {
+    const longTitle = "x".repeat(501);
+    const req = createRequest(
+      "POST",
+      `/api/v1/topics/${topicId}/attachments`,
+      {
+        kind: "url",
+        value_json: {
+          url: "https://example.com",
+          title: longTitle,
+        },
+      },
+      { Authorization: "Bearer test-token-12345" }
+    );
+    const response = await handleApiV1(req, ctx);
+
+    expect(response.status).toBe(400);
+    const data: any = await parseResponse(response);
+    expect(data.code).toBe("INVALID_INPUT");
+    expect(data.error).toContain("title");
+    expect(data.error).toContain("exceeds maximum length");
+  });
+
+  test("POST url attachment rejects control characters in description", async () => {
+    const req = createRequest(
+      "POST",
+      `/api/v1/topics/${topicId}/attachments`,
+      {
+        kind: "url",
+        value_json: {
+          url: "https://example.com",
+          description: "Bad\x00control\x01chars",
+        },
+      },
+      { Authorization: "Bearer test-token-12345" }
+    );
+    const response = await handleApiV1(req, ctx);
+
+    expect(response.status).toBe(400);
+    const data: any = await parseResponse(response);
+    expect(data.code).toBe("INVALID_INPUT");
+  });
+
+  test("POST link attachment applies same validation as url", async () => {
+    const req = createRequest(
+      "POST",
+      `/api/v1/topics/${topicId}/attachments`,
+      {
+        kind: "link",
+        value_json: { url: "javascript:void(0)" },
+      },
+      { Authorization: "Bearer test-token-12345" }
+    );
+    const response = await handleApiV1(req, ctx);
+
+    expect(response.status).toBe(400);
+    const data: any = await parseResponse(response);
+    expect(data.code).toBe("INVALID_INPUT");
+  });
+
+  test("POST unknown kind accepts arbitrary object (backwards compat)", async () => {
+    const req = createRequest(
+      "POST",
+      `/api/v1/topics/${topicId}/attachments`,
+      {
+        kind: "custom-metadata",
+        value_json: { foo: "bar", nested: { key: "value" } },
+      },
+      { Authorization: "Bearer test-token-12345" }
+    );
+    const response = await handleApiV1(req, ctx);
+
+    expect(response.status).toBe(201);
+    const data: any = await parseResponse(response);
+    expect(data.attachment.kind).toBe("custom-metadata");
+    expect(data.attachment.value_json.foo).toBe("bar");
+  });
+
+  test("POST data: URL with script is rejected", async () => {
+    const req = createRequest(
+      "POST",
+      `/api/v1/topics/${topicId}/attachments`,
+      {
+        kind: "url",
+        value_json: { url: "data:text/html,<script>alert('xss')</script>" },
+      },
+      { Authorization: "Bearer test-token-12345" }
+    );
+    const response = await handleApiV1(req, ctx);
+
+    expect(response.status).toBe(400);
+    const data: any = await parseResponse(response);
+    expect(data.code).toBe("INVALID_INPUT");
   });
 });
 

@@ -1173,6 +1173,622 @@ describe("Hub Management", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Retopic Edge Cases (bd-16d.6.10) - Gate D verification
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("Retopic Edge Cases (Gate D)", () => {
+  test("subscribers to old topic receive message.moved_topic via scope.topic_id", async () => {
+    const ctx = createTestContext();
+
+    // Create channels and topics
+    ctx.db.run("INSERT INTO channels (id, name, created_at) VALUES (?, ?, ?)", [
+      "ch1",
+      "general",
+      new Date().toISOString(),
+    ]);
+    ctx.db.run("INSERT INTO topics (id, channel_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", [
+      "topic_old",
+      "ch1",
+      "Old Topic",
+      new Date().toISOString(),
+      new Date().toISOString(),
+    ]);
+    ctx.db.run("INSERT INTO topics (id, channel_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", [
+      "topic_new",
+      "ch1",
+      "New Topic",
+      new Date().toISOString(),
+      new Date().toISOString(),
+    ]);
+
+    // Insert message in old topic
+    const msgId = "msg_retopic_1";
+    ctx.db.run(
+      "INSERT INTO messages (id, topic_id, channel_id, sender, content_raw, version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [msgId, "topic_old", "ch1", "user1", "Hello", 1, new Date().toISOString()]
+    );
+
+    const serverCtx = await setupTestServer(ctx.db);
+    ctx.server = serverCtx.server;
+    ctx.port = serverCtx.port;
+    ctx.baseWsUrl = serverCtx.baseWsUrl;
+    ctx.hub = serverCtx.hub;
+
+    try {
+      // Connect client subscribed to OLD topic only
+      const ws = new WebSocket(`${ctx.baseWsUrl}?token=${AUTH_TOKEN}`);
+      const messages: any[] = [];
+
+      await new Promise<void>((resolve, reject) => {
+        ws.onopen = () => {
+          ws.send(JSON.stringify({
+            type: "hello",
+            after_event_id: 0,
+            subscriptions: { channels: [], topics: ["topic_old"] }, // Subscribe to old topic
+          }));
+        };
+
+        ws.onmessage = (event) => {
+          const msg = JSON.parse(event.data);
+          messages.push(msg);
+
+          if (msg.type === "hello_ok") {
+            // Perform retopic
+            const { retopicMessage } = require("@agentchat/kernel");
+            const result = retopicMessage({
+              db: ctx.db,
+              messageId: msgId,
+              toTopicId: "topic_new",
+              mode: "one",
+            });
+
+            // Publish the retopic event
+            const moveEvent = {
+              event_id: result.affectedMessages[0].eventId,
+              ts: new Date().toISOString(),
+              name: "message.moved_topic",
+              scope: {
+                channel_id: "ch1",
+                topic_id: "topic_old", // old topic
+                topic_id2: "topic_new", // new topic
+              },
+              entity: { type: "message", id: msgId },
+              data: {
+                message_id: msgId,
+                old_topic_id: "topic_old",
+                new_topic_id: "topic_new",
+                channel_id: "ch1",
+                mode: "one",
+                version: 2,
+              },
+            };
+            ctx.hub!.publishEvent(moveEvent);
+          } else if (msg.type === "event" && msg.name === "message.moved_topic") {
+            resolve();
+          }
+        };
+
+        ws.onerror = reject;
+        setTimeout(() => reject(new Error("Timeout waiting for retopic event")), 5000);
+      });
+
+      // Verify we received the event
+      const events = messages.filter(m => m.type === "event");
+      expect(events.length).toBe(1);
+      expect(events[0].name).toBe("message.moved_topic");
+      expect(events[0].scope.topic_id).toBe("topic_old"); // Subscriber matches on old topic
+      expect(events[0].scope.topic_id2).toBe("topic_new");
+      expect(events[0].data.message_id).toBe(msgId);
+
+      ws.close();
+    } finally {
+      ctx.server.stop();
+      ctx.db.close();
+    }
+  });
+
+  test("subscribers to new topic receive message.moved_topic via scope.topic_id2", async () => {
+    const ctx = createTestContext();
+
+    // Create channels and topics
+    ctx.db.run("INSERT INTO channels (id, name, created_at) VALUES (?, ?, ?)", [
+      "ch1",
+      "general",
+      new Date().toISOString(),
+    ]);
+    ctx.db.run("INSERT INTO topics (id, channel_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", [
+      "topic_old",
+      "ch1",
+      "Old Topic",
+      new Date().toISOString(),
+      new Date().toISOString(),
+    ]);
+    ctx.db.run("INSERT INTO topics (id, channel_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", [
+      "topic_new",
+      "ch1",
+      "New Topic",
+      new Date().toISOString(),
+      new Date().toISOString(),
+    ]);
+
+    // Insert message in old topic
+    const msgId = "msg_retopic_2";
+    ctx.db.run(
+      "INSERT INTO messages (id, topic_id, channel_id, sender, content_raw, version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [msgId, "topic_old", "ch1", "user1", "Hello", 1, new Date().toISOString()]
+    );
+
+    const serverCtx = await setupTestServer(ctx.db);
+    ctx.server = serverCtx.server;
+    ctx.port = serverCtx.port;
+    ctx.baseWsUrl = serverCtx.baseWsUrl;
+    ctx.hub = serverCtx.hub;
+
+    try {
+      // Connect client subscribed to NEW topic only
+      const ws = new WebSocket(`${ctx.baseWsUrl}?token=${AUTH_TOKEN}`);
+      const messages: any[] = [];
+
+      await new Promise<void>((resolve, reject) => {
+        ws.onopen = () => {
+          ws.send(JSON.stringify({
+            type: "hello",
+            after_event_id: 0,
+            subscriptions: { channels: [], topics: ["topic_new"] }, // Subscribe to new topic
+          }));
+        };
+
+        ws.onmessage = (event) => {
+          const msg = JSON.parse(event.data);
+          messages.push(msg);
+
+          if (msg.type === "hello_ok") {
+            // Perform retopic
+            const { retopicMessage } = require("@agentchat/kernel");
+            const result = retopicMessage({
+              db: ctx.db,
+              messageId: msgId,
+              toTopicId: "topic_new",
+              mode: "one",
+            });
+
+            // Publish the retopic event
+            const moveEvent = {
+              event_id: result.affectedMessages[0].eventId,
+              ts: new Date().toISOString(),
+              name: "message.moved_topic",
+              scope: {
+                channel_id: "ch1",
+                topic_id: "topic_old", // old topic
+                topic_id2: "topic_new", // new topic
+              },
+              entity: { type: "message", id: msgId },
+              data: {
+                message_id: msgId,
+                old_topic_id: "topic_old",
+                new_topic_id: "topic_new",
+                channel_id: "ch1",
+                mode: "one",
+                version: 2,
+              },
+            };
+            ctx.hub!.publishEvent(moveEvent);
+          } else if (msg.type === "event" && msg.name === "message.moved_topic") {
+            resolve();
+          }
+        };
+
+        ws.onerror = reject;
+        setTimeout(() => reject(new Error("Timeout waiting for retopic event")), 5000);
+      });
+
+      // Verify we received the event
+      const events = messages.filter(m => m.type === "event");
+      expect(events.length).toBe(1);
+      expect(events[0].name).toBe("message.moved_topic");
+      expect(events[0].scope.topic_id).toBe("topic_old");
+      expect(events[0].scope.topic_id2).toBe("topic_new"); // Subscriber matches on new topic
+      expect(events[0].data.message_id).toBe(msgId);
+
+      ws.close();
+    } finally {
+      ctx.server.stop();
+      ctx.db.close();
+    }
+  });
+
+  test("subscribers to channel receive message.moved_topic via scope.channel_id", async () => {
+    const ctx = createTestContext();
+
+    // Create channels and topics
+    ctx.db.run("INSERT INTO channels (id, name, created_at) VALUES (?, ?, ?)", [
+      "ch1",
+      "general",
+      new Date().toISOString(),
+    ]);
+    ctx.db.run("INSERT INTO topics (id, channel_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", [
+      "topic_old",
+      "ch1",
+      "Old Topic",
+      new Date().toISOString(),
+      new Date().toISOString(),
+    ]);
+    ctx.db.run("INSERT INTO topics (id, channel_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", [
+      "topic_new",
+      "ch1",
+      "New Topic",
+      new Date().toISOString(),
+      new Date().toISOString(),
+    ]);
+
+    // Insert message in old topic
+    const msgId = "msg_retopic_3";
+    ctx.db.run(
+      "INSERT INTO messages (id, topic_id, channel_id, sender, content_raw, version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [msgId, "topic_old", "ch1", "user1", "Hello", 1, new Date().toISOString()]
+    );
+
+    const serverCtx = await setupTestServer(ctx.db);
+    ctx.server = serverCtx.server;
+    ctx.port = serverCtx.port;
+    ctx.baseWsUrl = serverCtx.baseWsUrl;
+    ctx.hub = serverCtx.hub;
+
+    try {
+      // Connect client subscribed to channel (not specific topics)
+      const ws = new WebSocket(`${ctx.baseWsUrl}?token=${AUTH_TOKEN}`);
+      const messages: any[] = [];
+
+      await new Promise<void>((resolve, reject) => {
+        ws.onopen = () => {
+          ws.send(JSON.stringify({
+            type: "hello",
+            after_event_id: 0,
+            subscriptions: { channels: ["ch1"], topics: [] }, // Subscribe to channel
+          }));
+        };
+
+        ws.onmessage = (event) => {
+          const msg = JSON.parse(event.data);
+          messages.push(msg);
+
+          if (msg.type === "hello_ok") {
+            // Perform retopic
+            const { retopicMessage } = require("@agentchat/kernel");
+            const result = retopicMessage({
+              db: ctx.db,
+              messageId: msgId,
+              toTopicId: "topic_new",
+              mode: "one",
+            });
+
+            // Publish the retopic event
+            const moveEvent = {
+              event_id: result.affectedMessages[0].eventId,
+              ts: new Date().toISOString(),
+              name: "message.moved_topic",
+              scope: {
+                channel_id: "ch1",
+                topic_id: "topic_old",
+                topic_id2: "topic_new",
+              },
+              entity: { type: "message", id: msgId },
+              data: {
+                message_id: msgId,
+                old_topic_id: "topic_old",
+                new_topic_id: "topic_new",
+                channel_id: "ch1",
+                mode: "one",
+                version: 2,
+              },
+            };
+            ctx.hub!.publishEvent(moveEvent);
+          } else if (msg.type === "event" && msg.name === "message.moved_topic") {
+            resolve();
+          }
+        };
+
+        ws.onerror = reject;
+        setTimeout(() => reject(new Error("Timeout waiting for retopic event")), 5000);
+      });
+
+      // Verify we received the event
+      const events = messages.filter(m => m.type === "event");
+      expect(events.length).toBe(1);
+      expect(events[0].name).toBe("message.moved_topic");
+      expect(events[0].scope.channel_id).toBe("ch1"); // Subscriber matches on channel
+      expect(events[0].scope.topic_id).toBe("topic_old");
+      expect(events[0].scope.topic_id2).toBe("topic_new");
+      expect(events[0].data.message_id).toBe(msgId);
+
+      ws.close();
+    } finally {
+      ctx.server.stop();
+      ctx.db.close();
+    }
+  });
+
+  test("cross-channel retopic is rejected: no DB changes, no events", async () => {
+    const ctx = createTestContext();
+
+    // Create two channels with topics
+    ctx.db.run("INSERT INTO channels (id, name, created_at) VALUES (?, ?, ?)", [
+      "ch1",
+      "general",
+      new Date().toISOString(),
+    ]);
+    ctx.db.run("INSERT INTO channels (id, name, created_at) VALUES (?, ?, ?)", [
+      "ch2",
+      "random",
+      new Date().toISOString(),
+    ]);
+    ctx.db.run("INSERT INTO topics (id, channel_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", [
+      "topic_ch1",
+      "ch1",
+      "Topic in CH1",
+      new Date().toISOString(),
+      new Date().toISOString(),
+    ]);
+    ctx.db.run("INSERT INTO topics (id, channel_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", [
+      "topic_ch2",
+      "ch2",
+      "Topic in CH2",
+      new Date().toISOString(),
+      new Date().toISOString(),
+    ]);
+
+    // Insert message in ch1
+    const msgId = "msg_cross_channel";
+    ctx.db.run(
+      "INSERT INTO messages (id, topic_id, channel_id, sender, content_raw, version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [msgId, "topic_ch1", "ch1", "user1", "Hello", 1, new Date().toISOString()]
+    );
+
+    const serverCtx = await setupTestServer(ctx.db);
+    ctx.server = serverCtx.server;
+    ctx.port = serverCtx.port;
+    ctx.baseWsUrl = serverCtx.baseWsUrl;
+    ctx.hub = serverCtx.hub;
+
+    try {
+      // Connect client subscribed to both channels
+      const ws = new WebSocket(`${ctx.baseWsUrl}?token=${AUTH_TOKEN}`);
+      const messages: any[] = [];
+
+      await new Promise<void>((resolve, reject) => {
+        ws.onopen = () => {
+          ws.send(JSON.stringify({
+            type: "hello",
+            after_event_id: 0,
+            subscriptions: { channels: ["ch1", "ch2"], topics: [] },
+          }));
+        };
+
+        ws.onmessage = (event) => {
+          const msg = JSON.parse(event.data);
+          messages.push(msg);
+
+          if (msg.type === "hello_ok") {
+            // Attempt cross-channel retopic (should fail)
+            const { retopicMessage, CrossChannelMoveError } = require("@agentchat/kernel");
+            const { getLatestEventId } = require("@agentchat/kernel");
+            
+            const eventsBefore = getLatestEventId(ctx.db);
+
+            let errorThrown = false;
+            try {
+              retopicMessage({
+                db: ctx.db,
+                messageId: msgId,
+                toTopicId: "topic_ch2", // Different channel!
+                mode: "one",
+              });
+            } catch (err: any) {
+              errorThrown = true;
+              expect(err).toBeInstanceOf(CrossChannelMoveError);
+              expect(err.code).toBe("CROSS_CHANNEL_MOVE");
+              expect(err.sourceChannelId).toBe("ch1");
+              expect(err.targetChannelId).toBe("ch2");
+            }
+
+            expect(errorThrown).toBe(true);
+
+            // Verify no event inserted
+            const eventsAfter = getLatestEventId(ctx.db);
+            expect(eventsAfter).toBe(eventsBefore);
+
+            // Verify message unchanged
+            const messageRow = ctx.db
+              .query<{ topic_id: string; version: number }, [string]>(
+                "SELECT topic_id, version FROM messages WHERE id = ?"
+              )
+              .get(msgId);
+            expect(messageRow!.topic_id).toBe("topic_ch1");
+            expect(messageRow!.version).toBe(1); // No version bump
+
+            // Wait a bit to ensure no events are published
+            setTimeout(resolve, 500);
+          } else if (msg.type === "event") {
+            // Should never happen
+            reject(new Error("Should not receive any events after cross-channel rejection"));
+          }
+        };
+
+        ws.onerror = reject;
+        setTimeout(() => reject(new Error("Timeout")), 5000);
+      });
+
+      // Verify no events received
+      const events = messages.filter(m => m.type === "event");
+      expect(events.length).toBe(0);
+
+      ws.close();
+    } finally {
+      ctx.server.stop();
+      ctx.db.close();
+    }
+  });
+
+  test("all subscribers (old topic, new topic, channel) receive same retopic event", async () => {
+    const ctx = createTestContext();
+
+    // Create channels and topics
+    ctx.db.run("INSERT INTO channels (id, name, created_at) VALUES (?, ?, ?)", [
+      "ch1",
+      "general",
+      new Date().toISOString(),
+    ]);
+    ctx.db.run("INSERT INTO topics (id, channel_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", [
+      "topic_old",
+      "ch1",
+      "Old Topic",
+      new Date().toISOString(),
+      new Date().toISOString(),
+    ]);
+    ctx.db.run("INSERT INTO topics (id, channel_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", [
+      "topic_new",
+      "ch1",
+      "New Topic",
+      new Date().toISOString(),
+      new Date().toISOString(),
+    ]);
+
+    // Insert message in old topic
+    const msgId = "msg_retopic_fanout";
+    ctx.db.run(
+      "INSERT INTO messages (id, topic_id, channel_id, sender, content_raw, version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [msgId, "topic_old", "ch1", "user1", "Hello", 1, new Date().toISOString()]
+    );
+
+    const serverCtx = await setupTestServer(ctx.db);
+    ctx.server = serverCtx.server;
+    ctx.port = serverCtx.port;
+    ctx.baseWsUrl = serverCtx.baseWsUrl;
+    ctx.hub = serverCtx.hub;
+
+    try {
+      // Connect three clients with different subscriptions
+      const ws1 = new WebSocket(`${ctx.baseWsUrl}?token=${AUTH_TOKEN}`); // old topic
+      const ws2 = new WebSocket(`${ctx.baseWsUrl}?token=${AUTH_TOKEN}`); // new topic
+      const ws3 = new WebSocket(`${ctx.baseWsUrl}?token=${AUTH_TOKEN}`); // channel
+
+      const messages1: any[] = [];
+      const messages2: any[] = [];
+      const messages3: any[] = [];
+
+      let handshakesComplete = 0;
+      let eventsReceived = 0;
+      let allHandshakesResolve: (() => void) | null = null;
+      let allEventsResolve: (() => void) | null = null;
+
+      const allHandshakesPromise = new Promise<void>((resolve) => {
+        allHandshakesResolve = resolve;
+      });
+
+      const allEventsPromise = new Promise<void>((resolve) => {
+        allEventsResolve = resolve;
+      });
+
+      const setupClient = (ws: WebSocket, subscription: any, messageArray: any[]) => {
+        ws.onopen = () => {
+          ws.send(JSON.stringify({
+            type: "hello",
+            after_event_id: 0,
+            subscriptions: subscription,
+          }));
+        };
+
+        ws.onmessage = (event) => {
+          const msg = JSON.parse(event.data);
+          messageArray.push(msg);
+
+          if (msg.type === "hello_ok") {
+            handshakesComplete++;
+            if (handshakesComplete === 3 && allHandshakesResolve) {
+              allHandshakesResolve();
+            }
+          } else if (msg.type === "event" && msg.name === "message.moved_topic") {
+            eventsReceived++;
+            if (eventsReceived === 3 && allEventsResolve) {
+              allEventsResolve();
+            }
+          }
+        };
+
+        ws.onerror = () => {
+          // Ignore errors
+        };
+      };
+
+      setupClient(ws1, { channels: [], topics: ["topic_old"] }, messages1);
+      setupClient(ws2, { channels: [], topics: ["topic_new"] }, messages2);
+      setupClient(ws3, { channels: ["ch1"], topics: [] }, messages3);
+
+      // Wait for all handshakes
+      await allHandshakesPromise;
+
+      // All clients handshaked, now perform retopic
+      const { retopicMessage } = require("@agentchat/kernel");
+      const result = retopicMessage({
+        db: ctx.db,
+        messageId: msgId,
+        toTopicId: "topic_new",
+        mode: "one",
+      });
+
+      // Publish the retopic event
+      const moveEvent = {
+        event_id: result.affectedMessages[0].eventId,
+        ts: new Date().toISOString(),
+        name: "message.moved_topic",
+        scope: {
+          channel_id: "ch1",
+          topic_id: "topic_old",
+          topic_id2: "topic_new",
+        },
+        entity: { type: "message", id: msgId },
+        data: {
+          message_id: msgId,
+          old_topic_id: "topic_old",
+          new_topic_id: "topic_new",
+          channel_id: "ch1",
+          mode: "one",
+          version: 2,
+        },
+      };
+      ctx.hub!.publishEvent(moveEvent);
+
+      // Wait for all clients to receive the event
+      await allEventsPromise;
+
+      // Verify all clients received the event
+      const events1 = messages1.filter(m => m.type === "event");
+      const events2 = messages2.filter(m => m.type === "event");
+      const events3 = messages3.filter(m => m.type === "event");
+
+      expect(events1.length).toBe(1);
+      expect(events2.length).toBe(1);
+      expect(events3.length).toBe(1);
+
+      // All events should be identical
+      expect(events1[0].name).toBe("message.moved_topic");
+      expect(events2[0].name).toBe("message.moved_topic");
+      expect(events3[0].name).toBe("message.moved_topic");
+
+      expect(events1[0].event_id).toBe(events2[0].event_id);
+      expect(events2[0].event_id).toBe(events3[0].event_id);
+
+      ws1.close();
+      ws2.close();
+      ws3.close();
+    } finally {
+      ctx.server.stop();
+      ctx.db.close();
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Failure injection: backpressure / slow consumer
 // ─────────────────────────────────────────────────────────────────────────────
 

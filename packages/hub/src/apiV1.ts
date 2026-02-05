@@ -766,6 +766,155 @@ function handleListAttachments(
   return jsonResponse({ attachments });
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Attachment Metadata Validation
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ATTACHMENT_LIMITS = {
+  URL_MAX_LENGTH: 2048,
+  STRING_FIELD_MAX_LENGTH: 500,
+} as const;
+
+/**
+ * Check if a string contains XSS-ish patterns.
+ * Reject strings with HTML tags, script protocols, or control characters.
+ */
+function containsXssPatterns(str: string): boolean {
+  if (typeof str !== "string") return false;
+
+  // Check for HTML tags
+  if (str.includes("<") || str.includes("</") || str.includes(">")) {
+    return true;
+  }
+
+  // Check for javascript: protocol
+  if (str.toLowerCase().includes("javascript:")) {
+    return true;
+  }
+
+  // Check for data: protocol with script
+  if (str.toLowerCase().includes("data:") && str.toLowerCase().includes("script")) {
+    return true;
+  }
+
+  // Check for control characters (except common whitespace)
+  for (let i = 0; i < str.length; i++) {
+    const code = str.charCodeAt(i);
+    // Allow tab (9), newline (10), carriage return (13), space (32)
+    if (code < 32 && code !== 9 && code !== 10 && code !== 13) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Validate URL string for attachment metadata.
+ * Returns { valid: true } or { valid: false, reason: string }.
+ */
+function validateAttachmentUrl(url: unknown): { valid: true } | { valid: false; reason: string } {
+  // Must be string
+  if (typeof url !== "string") {
+    return { valid: false, reason: "url must be a string" };
+  }
+
+  // Check length
+  if (url.length === 0) {
+    return { valid: false, reason: "url cannot be empty" };
+  }
+  if (url.length > ATTACHMENT_LIMITS.URL_MAX_LENGTH) {
+    return { valid: false, reason: "url exceeds maximum length" };
+  }
+
+  // Check for XSS patterns
+  if (containsXssPatterns(url)) {
+    return { valid: false, reason: "url contains invalid characters or patterns" };
+  }
+
+  // Parse URL
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { valid: false, reason: "url is not a valid URL format" };
+  }
+
+  // Only allow http/https protocols
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return { valid: false, reason: "url protocol must be http or https" };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Validate a generic string field (title, description, etc).
+ * Returns { valid: true } or { valid: false, reason: string }.
+ */
+function validateStringField(
+  value: unknown,
+  fieldName: string
+): { valid: true } | { valid: false; reason: string } {
+  if (typeof value !== "string") {
+    return { valid: false, reason: `${fieldName} must be a string` };
+  }
+
+  if (value.length > ATTACHMENT_LIMITS.STRING_FIELD_MAX_LENGTH) {
+    return { valid: false, reason: `${fieldName} exceeds maximum length` };
+  }
+
+  if (containsXssPatterns(value)) {
+    return { valid: false, reason: `${fieldName} contains invalid characters or patterns` };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Validate attachment value_json based on kind.
+ * Returns { valid: true } or { valid: false, reason: string }.
+ */
+function validateAttachmentValueJson(
+  kind: string,
+  valueJson: Record<string, unknown>
+): { valid: true } | { valid: false; reason: string } {
+  // For URL/link kinds, apply strict validation
+  if (kind === "url" || kind === "link") {
+    // Require url field
+    if (!("url" in valueJson)) {
+      return { valid: false, reason: "url field is required" };
+    }
+
+    // Validate url
+    const urlValidation = validateAttachmentUrl(valueJson.url);
+    if (!urlValidation.valid) {
+      return urlValidation;
+    }
+
+    // Validate optional title
+    if ("title" in valueJson && valueJson.title !== null && valueJson.title !== undefined) {
+      const titleValidation = validateStringField(valueJson.title, "title");
+      if (!titleValidation.valid) {
+        return titleValidation;
+      }
+    }
+
+    // Validate optional description
+    if ("description" in valueJson && valueJson.description !== null && valueJson.description !== undefined) {
+      const descValidation = validateStringField(valueJson.description, "description");
+      if (!descValidation.valid) {
+        return descValidation;
+      }
+    }
+  }
+
+  // For unknown kinds, only apply generic checks
+  // (object type and size are already validated by caller)
+
+  return { valid: true };
+}
+
 /**
  * POST /api/v1/topics/:topic_id/attachments
  */
@@ -813,6 +962,12 @@ async function handleCreateAttachment(
   // Validate value_json size
   if (!validateJsonSize(value_json, SIZE_LIMITS.ATTACHMENT)) {
     return validationErrorResponse("value_json exceeds 16KB limit");
+  }
+
+  // Validate value_json content based on kind
+  const valueJsonValidation = validateAttachmentValueJson(kind, value_json);
+  if (!valueJsonValidation.valid) {
+    return validationErrorResponse(valueJsonValidation.reason);
   }
 
   try {

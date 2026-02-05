@@ -51,6 +51,13 @@ import {
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
+export interface UrlExtractionConfig {
+  /** URL patterns to allow (matched against full URL). If empty/undefined, allows all http(s) URLs. */
+  allowlist?: RegExp[];
+  /** URL patterns to block (matched against full URL). Takes precedence over allowlist. */
+  blocklist?: RegExp[];
+}
+
 export interface ApiV1Context {
   db: Database;
   /** Expected Bearer token for mutation endpoints. */
@@ -59,6 +66,8 @@ export interface ApiV1Context {
   rateLimiter?: HubRateLimiter;
   /** Optional hook invoked after successful mutations to publish newly-created event ids (e.g. for WS fanout). */
   onEventIds?: (eventIds: number[]) => void;
+  /** Optional URL extraction configuration for auto-creating attachments from message content. */
+  urlExtraction?: UrlExtractionConfig;
 }
 
 interface RouteMatch {
@@ -85,6 +94,79 @@ function publishEventIds(
   if (ids.length > 0) {
     ctx.onEventIds(ids);
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// URL Extraction
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Extract http(s) URLs from text.
+ * Returns array of unique URLs found.
+ */
+function extractUrls(text: string): string[] {
+  // Match http(s) URLs - simple but effective pattern
+  const urlPattern = /https?:\/\/[^\s<>'"]+/gi;
+  const matches = text.match(urlPattern) ?? [];
+  
+  // Deduplicate and filter valid URLs
+  const seen = new Set<string>();
+  const urls: string[] = [];
+  
+  for (const url of matches) {
+    // Clean up trailing punctuation that shouldn't be part of URL
+    let cleanUrl = url.replace(/[.,;:!?)]+$/, '');
+    
+    // Validate it's a real URL
+    try {
+      const parsed = new URL(cleanUrl);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        if (!seen.has(cleanUrl)) {
+          seen.add(cleanUrl);
+          urls.push(cleanUrl);
+        }
+      }
+    } catch {
+      // Invalid URL, skip
+    }
+  }
+  
+  return urls;
+}
+
+/**
+ * Filter URLs based on allowlist/blocklist configuration.
+ * 
+ * @param urls - Array of URLs to filter
+ * @param config - URL extraction configuration
+ * @returns Filtered array of allowed URLs
+ */
+function filterUrls(urls: string[], config?: UrlExtractionConfig): string[] {
+  if (!config) return urls;
+  
+  return urls.filter((url) => {
+    // Check blocklist first (takes precedence)
+    if (config.blocklist) {
+      for (const pattern of config.blocklist) {
+        if (pattern.test(url)) {
+          return false;
+        }
+      }
+    }
+    
+    // Check allowlist (if provided)
+    if (config.allowlist && config.allowlist.length > 0) {
+      for (const pattern of config.allowlist) {
+        if (pattern.test(url)) {
+          return true;
+        }
+      }
+      return false; // Not in allowlist
+    }
+    
+    // No allowlist = allow all (except blocked)
+    return true;
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -144,6 +226,85 @@ function internalErrorResponse(): Response {
       headers: { "Content-Type": "application/json" },
     }
   );
+}
+
+function serviceUnavailableResponse(reason: string, retryAfterSeconds = 1): Response {
+  return new Response(
+    JSON.stringify({
+      error: "Service temporarily unavailable",
+      code: "SERVICE_UNAVAILABLE",
+      details: { reason },
+    }),
+    {
+      status: 503,
+      headers: {
+        "Content-Type": "application/json",
+        "Retry-After": String(retryAfterSeconds),
+      },
+    }
+  );
+}
+
+/**
+ * Check if error is a SQLite busy/lock error.
+ * Returns true if error indicates database is locked or busy.
+ */
+function isSqliteBusyError(error: unknown): boolean {
+  if (error instanceof Error) {
+    return (
+      error.message.includes("database is locked") ||
+      error.message.includes("SQLITE_BUSY") ||
+      error.message.includes("database table is locked")
+    );
+  }
+  return false;
+}
+
+/**
+ * Check if error is a SQLite disk full error.
+ */
+function isSqliteDiskFullError(error: unknown): boolean {
+  if (error instanceof Error) {
+    return (
+      error.message.includes("SQLITE_FULL") ||
+      error.message.includes("disk full") ||
+      error.message.includes("database or disk is full")
+    );
+  }
+  return false;
+}
+
+/**
+ * Handle database errors with appropriate HTTP responses.
+ * Maps SQLite errors to proper status codes (503 for busy/full, 400 for constraints).
+ * Falls back to 500 for unknown errors.
+ * 
+ * @param error - Caught error
+ * @param context - Context string for logging
+ * @returns Response with appropriate status code
+ */
+function handleDatabaseError(error: unknown, context: string): Response {
+  // Check for SQLite busy/lock errors (map to 503)
+  if (isSqliteBusyError(error)) {
+    console.warn(`${context} failed due to database lock:`, error);
+    return serviceUnavailableResponse("Database is busy, please retry", 1);
+  }
+  
+  // Check for disk full errors (map to 503)
+  if (isSqliteDiskFullError(error)) {
+    console.error(`${context} failed due to disk full:`, error);
+    return serviceUnavailableResponse("Database is full, please contact administrator", 5);
+  }
+  
+  // Check for UNIQUE constraint violations (map to 400)
+  if (error instanceof Error && error.message.includes("UNIQUE")) {
+    // Caller should handle this with specific message
+    return validationErrorResponse("Unique constraint violation");
+  }
+  
+  // Unknown error (map to 500)
+  console.error(`${context} failed:`, error);
+  return internalErrorResponse();
 }
 
 function jsonResponse(data: unknown, status = 200): Response {
@@ -237,8 +398,7 @@ async function handleCreateChannel(req: Request, ctx: ApiV1Context): Promise<Res
     if (error instanceof Error && error.message.includes("UNIQUE")) {
       return validationErrorResponse("Channel name already exists");
     }
-    console.error("Failed to create channel:", error);
-    return internalErrorResponse();
+    return handleDatabaseError(error, "Channel creation");
   }
 }
 
@@ -351,8 +511,7 @@ async function handleCreateTopic(req: Request, ctx: ApiV1Context): Promise<Respo
     if (error instanceof Error && error.message.includes("UNIQUE")) {
       return validationErrorResponse("Topic title already exists in this channel");
     }
-    console.error("Failed to create topic:", error);
-    return internalErrorResponse();
+    return handleDatabaseError(error, "Topic creation");
   }
 }
 
@@ -440,8 +599,7 @@ async function handleUpdateTopic(
     if (error instanceof Error && error.message.includes("UNIQUE")) {
       return validationErrorResponse("Topic title already exists in this channel");
     }
-    console.error("Failed to update topic:", error);
-    return internalErrorResponse();
+    return handleDatabaseError(error, "Topic update");
   }
 }
 
@@ -472,8 +630,7 @@ function handleListMessages(req: Request, ctx: ApiV1Context): Response {
 
     return jsonResponse({ messages: result.items, has_more: result.hasMore });
   } catch (error) {
-    console.error("Failed to list messages:", error);
-    return internalErrorResponse();
+    return handleDatabaseError(error, "Message listing");
   }
 }
 
@@ -523,6 +680,10 @@ async function handleCreateMessage(req: Request, ctx: ApiV1Context): Promise<Res
     const messageId = generateId("msg");
     const now = new Date().toISOString();
 
+    // Extract URLs from content
+    const extractedUrls = extractUrls(content_raw);
+    const allowedUrls = filterUrls(extractedUrls, ctx.urlExtraction);
+
     // Use transaction
     const result = ctx.db.transaction(() => {
       // Insert message
@@ -538,8 +699,8 @@ async function handleCreateMessage(req: Request, ctx: ApiV1Context): Promise<Res
         [now, topic_id]
       );
 
-      // Emit event
-      const eventId = insertEvent({
+      // Emit message.created event
+      const messageEventId = insertEvent({
         db: ctx.db,
         name: "message.created",
         scopes: { channel_id: topic.channel_id, topic_id },
@@ -560,10 +721,68 @@ async function handleCreateMessage(req: Request, ctx: ApiV1Context): Promise<Res
         },
       });
 
-      return { messageId, eventId };
+      const allEventIds: number[] = [messageEventId];
+
+      // Create URL attachments (with dedupe)
+      for (const url of allowedUrls) {
+        const valueJson = { url };
+        const dedupeKey = url; // Use URL itself as dedupe key
+        const attachmentId = generateId("att");
+
+        // Check if attachment already exists (dedupe)
+        const existing = ctx.db
+          .query<{ id: string }, [string, string, string, string]>(
+            `SELECT id FROM topic_attachments
+             WHERE topic_id = ? AND kind = ? AND COALESCE(key, '') = ? AND dedupe_key = ?`
+          )
+          .get(topic_id, "url", "", dedupeKey);
+
+        if (!existing) {
+          // Insert new attachment
+          ctx.db.run(
+            `INSERT INTO topic_attachments (id, topic_id, kind, key, value_json, dedupe_key, source_message_id, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              attachmentId,
+              topic_id,
+              "url",
+              null,
+              JSON.stringify(valueJson),
+              dedupeKey,
+              messageId,
+              now,
+            ]
+          );
+
+          // Emit topic.attachment_added event
+          const attachmentEventId = insertEvent({
+            db: ctx.db,
+            name: "topic.attachment_added",
+            scopes: { channel_id: topic.channel_id, topic_id },
+            entity: { type: "attachment", id: attachmentId },
+            data: {
+              attachment: {
+                id: attachmentId,
+                topic_id,
+                kind: "url",
+                key: null,
+                value_json: valueJson,
+                dedupe_key: dedupeKey,
+                source_message_id: messageId,
+                created_at: now,
+              },
+            },
+          });
+
+          allEventIds.push(attachmentEventId);
+        }
+        // If duplicate, no event is emitted
+      }
+
+      return { messageId, eventIds: allEventIds };
     })();
 
-    publishEventIds(ctx, [result.eventId]);
+    publishEventIds(ctx, result.eventIds);
 
     const message = {
       id: result.messageId,
@@ -578,10 +797,9 @@ async function handleCreateMessage(req: Request, ctx: ApiV1Context): Promise<Res
       deleted_by: null,
     };
 
-    return jsonResponse({ message, event_id: result.eventId }, 201);
+    return jsonResponse({ message, event_id: result.eventIds[0] }, 201);
   } catch (error) {
-    console.error("Failed to create message:", error);
-    return internalErrorResponse();
+    return handleDatabaseError(error, "Message creation");
   }
 }
 
@@ -737,8 +955,7 @@ async function handlePatchMessage(
     if (error instanceof CrossChannelMoveError) {
       return crossChannelMoveResponse(error);
     }
-    console.error("Failed to patch message:", error);
-    return internalErrorResponse();
+    return handleDatabaseError(error, "Message patch");
   }
 }
 
@@ -1064,8 +1281,7 @@ async function handleCreateAttachment(
 
     return jsonResponse({ attachment, event_id: result.eventId }, 201);
   } catch (error) {
-    console.error("Failed to create attachment:", error);
-    return internalErrorResponse();
+    return handleDatabaseError(error, "Attachment creation");
   }
 }
 
@@ -1099,8 +1315,7 @@ function handleListEvents(req: Request, ctx: ApiV1Context): Response {
 
     return jsonResponse({ events: formattedEvents });
   } catch (error) {
-    console.error("Failed to list events:", error);
-    return internalErrorResponse();
+    return handleDatabaseError(error, "Event listing");
   }
 }
 

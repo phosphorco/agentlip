@@ -127,7 +127,7 @@ export {
 } from "./bodyParser";
 
 // Re-export HTTP API handler utilities
-export { handleApiV1, type ApiV1Context } from "./apiV1";
+export { handleApiV1, type ApiV1Context, type UrlExtractionConfig } from "./apiV1";
 
 // Re-export WS endpoint utilities
 export {
@@ -166,6 +166,11 @@ export interface StartHubOptions {
   rateLimitGlobal?: RateLimiterConfig;
   /** Disable rate limiting (for testing) */
   disableRateLimiting?: boolean;
+  /** URL extraction configuration for auto-creating attachments from message content. */
+  urlExtraction?: {
+    allowlist?: RegExp[];
+    blocklist?: RegExp[];
+  };
 }
 
 export interface HubServer {
@@ -592,6 +597,7 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
           db,
           authToken: authToken ?? "",
           instanceId,
+          urlExtraction: options.urlExtraction,
           onEventIds(eventIds) {
             capturedEventIds = eventIds;
             wsHub.publishEventIds(eventIds);

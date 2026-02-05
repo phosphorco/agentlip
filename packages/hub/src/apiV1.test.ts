@@ -1795,3 +1795,393 @@ describe("API v1 - Rate Limiting", () => {
     expect(data.code).toBe("RATE_LIMITED");
   });
 });
+
+describe("API v1 - URL Extraction", () => {
+  let db: Database;
+  let ctx: ApiV1Context;
+  let channelId: string;
+  let topicId: string;
+
+  beforeEach(async () => {
+    db = createTestDb();
+    ctx = createTestContext(db);
+
+    // Create channel
+    const channelResponse = await handleApiV1(
+      createRequest(
+        "POST",
+        "/api/v1/channels",
+        { name: "general" },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+    const channelData: any = await parseResponse(channelResponse);
+    channelId = channelData.channel.id;
+
+    // Create topic
+    const topicResponse = await handleApiV1(
+      createRequest(
+        "POST",
+        "/api/v1/topics",
+        { channel_id: channelId, title: "Links" },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+    const topicData: any = await parseResponse(topicResponse);
+    topicId = topicData.topic.id;
+  });
+
+  test("Message with URLs auto-creates attachments", async () => {
+    const eventIds: number[] = [];
+    ctx.onEventIds = (ids) => eventIds.push(...ids);
+
+    const content = "Check out https://example.com and http://test.org/path";
+
+    const response = await handleApiV1(
+      createRequest(
+        "POST",
+        "/api/v1/messages",
+        {
+          topic_id: topicId,
+          sender: "agent-1",
+          content_raw: content,
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+
+    expect(response.status).toBe(201);
+    const data: any = await parseResponse(response);
+    expect(data.message.content_raw).toBe(content);
+
+    // Verify attachments were created
+    const attachments = db
+      .query("SELECT * FROM topic_attachments WHERE topic_id = ? ORDER BY id")
+      .all(topicId) as any[];
+
+    expect(attachments.length).toBe(2);
+    
+    // Extract URLs (order may vary)
+    const urls = attachments.map((a: any) => JSON.parse(a.value_json).url).sort();
+    expect(urls).toEqual(["http://test.org/path", "https://example.com"]);
+    
+    // Verify common properties
+    expect(attachments[0].kind).toBe("url");
+    expect(attachments[0].source_message_id).toBe(data.message.id);
+    expect(attachments[1].kind).toBe("url");
+    expect(attachments[1].source_message_id).toBe(data.message.id);
+
+    // Verify events: message.created + 2x topic.attachment_added
+    expect(eventIds.length).toBe(3);
+    const events = db
+      .query("SELECT * FROM events WHERE event_id IN (?, ?, ?) ORDER BY event_id")
+      .all(...eventIds) as any[];
+
+    expect(events[0].name).toBe("message.created");
+    expect(events[1].name).toBe("topic.attachment_added");
+    expect(events[2].name).toBe("topic.attachment_added");
+  });
+
+  test("Duplicate URLs in same topic do not create extra attachments", async () => {
+    const eventIds: number[] = [];
+    ctx.onEventIds = (ids) => eventIds.push(...ids);
+
+    // First message with URL
+    const response1 = await handleApiV1(
+      createRequest(
+        "POST",
+        "/api/v1/messages",
+        {
+          topic_id: topicId,
+          sender: "agent-1",
+          content_raw: "See https://example.com",
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+
+    expect(response1.status).toBe(201);
+
+    // Should have 2 events: message.created + attachment_added
+    expect(eventIds.length).toBe(2);
+    const firstMessageEventIds = [...eventIds];
+    eventIds.length = 0;
+
+    // Second message with same URL
+    const response2 = await handleApiV1(
+      createRequest(
+        "POST",
+        "/api/v1/messages",
+        {
+          topic_id: topicId,
+          sender: "agent-2",
+          content_raw: "Also check https://example.com",
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+
+    expect(response2.status).toBe(201);
+
+    // Should only have 1 event: message.created (no duplicate attachment)
+    expect(eventIds.length).toBe(1);
+    const events = db
+      .query("SELECT * FROM events WHERE event_id = ?")
+      .all(eventIds[0]) as any[];
+    expect(events[0].name).toBe("message.created");
+
+    // Verify only one attachment exists
+    const attachments = db
+      .query("SELECT * FROM topic_attachments WHERE topic_id = ?")
+      .all(topicId) as any[];
+    expect(attachments.length).toBe(1);
+    expect(JSON.parse(attachments[0].value_json).url).toBe("https://example.com");
+  });
+
+  test("URL extraction with blocklist", async () => {
+    // Configure blocklist
+    ctx.urlExtraction = {
+      blocklist: [/blocked\.example\.com/],
+    };
+
+    const content = "See https://example.com and https://blocked.example.com";
+
+    const response = await handleApiV1(
+      createRequest(
+        "POST",
+        "/api/v1/messages",
+        {
+          topic_id: topicId,
+          sender: "agent-1",
+          content_raw: content,
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+
+    expect(response.status).toBe(201);
+
+    // Verify only allowed URL was created
+    const attachments = db
+      .query("SELECT * FROM topic_attachments WHERE topic_id = ?")
+      .all(topicId) as any[];
+
+    expect(attachments.length).toBe(1);
+    expect(JSON.parse(attachments[0].value_json).url).toBe("https://example.com");
+  });
+
+  test("URL extraction with allowlist", async () => {
+    // Configure allowlist
+    ctx.urlExtraction = {
+      allowlist: [/allowed\.example\.com/],
+    };
+
+    const content = "See https://allowed.example.com and https://other.com";
+
+    const response = await handleApiV1(
+      createRequest(
+        "POST",
+        "/api/v1/messages",
+        {
+          topic_id: topicId,
+          sender: "agent-1",
+          content_raw: content,
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+
+    expect(response.status).toBe(201);
+
+    // Verify only allowed URL was created
+    const attachments = db
+      .query("SELECT * FROM topic_attachments WHERE topic_id = ?")
+      .all(topicId) as any[];
+
+    expect(attachments.length).toBe(1);
+    expect(JSON.parse(attachments[0].value_json).url).toBe("https://allowed.example.com");
+  });
+
+  test("Blocklist takes precedence over allowlist", async () => {
+    ctx.urlExtraction = {
+      allowlist: [/example\.com/],
+      blocklist: [/blocked\.example\.com/],
+    };
+
+    const content = "See https://example.com and https://blocked.example.com";
+
+    const response = await handleApiV1(
+      createRequest(
+        "POST",
+        "/api/v1/messages",
+        {
+          topic_id: topicId,
+          sender: "agent-1",
+          content_raw: content,
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+
+    expect(response.status).toBe(201);
+
+    const attachments = db
+      .query("SELECT * FROM topic_attachments WHERE topic_id = ?")
+      .all(topicId) as any[];
+
+    expect(attachments.length).toBe(1);
+    expect(JSON.parse(attachments[0].value_json).url).toBe("https://example.com");
+  });
+
+  test("Message without URLs creates no attachments", async () => {
+    const eventIds: number[] = [];
+    ctx.onEventIds = (ids) => eventIds.push(...ids);
+
+    const response = await handleApiV1(
+      createRequest(
+        "POST",
+        "/api/v1/messages",
+        {
+          topic_id: topicId,
+          sender: "agent-1",
+          content_raw: "Just plain text, no links here",
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+
+    expect(response.status).toBe(201);
+
+    // Verify no attachments created
+    const attachments = db
+      .query("SELECT * FROM topic_attachments WHERE topic_id = ?")
+      .all(topicId) as any[];
+    expect(attachments.length).toBe(0);
+
+    // Only message.created event
+    expect(eventIds.length).toBe(1);
+  });
+
+  test("URL extraction handles multiple URLs in same message", async () => {
+    const content = "Links: https://a.com, https://b.com, https://c.com and https://a.com again";
+
+    const response = await handleApiV1(
+      createRequest(
+        "POST",
+        "/api/v1/messages",
+        {
+          topic_id: topicId,
+          sender: "agent-1",
+          content_raw: content,
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+
+    expect(response.status).toBe(201);
+
+    // Should dedupe within same message (a.com appears twice)
+    const attachments = db
+      .query("SELECT * FROM topic_attachments WHERE topic_id = ? ORDER BY created_at")
+      .all(topicId) as any[];
+
+    expect(attachments.length).toBe(3);
+    const urls = attachments.map((a: any) => JSON.parse(a.value_json).url);
+    expect(urls).toContain("https://a.com");
+    expect(urls).toContain("https://b.com");
+    expect(urls).toContain("https://c.com");
+  });
+
+  test("URL extraction ignores non-http(s) protocols", async () => {
+    const content = "Links: https://safe.com, ftp://unsafe.com, javascript:alert(1), data:text/html,test";
+
+    const response = await handleApiV1(
+      createRequest(
+        "POST",
+        "/api/v1/messages",
+        {
+          topic_id: topicId,
+          sender: "agent-1",
+          content_raw: content,
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+
+    expect(response.status).toBe(201);
+
+    // Only http(s) URLs should be extracted
+    const attachments = db
+      .query("SELECT * FROM topic_attachments WHERE topic_id = ?")
+      .all(topicId) as any[];
+
+    expect(attachments.length).toBe(1);
+    expect(JSON.parse(attachments[0].value_json).url).toBe("https://safe.com");
+  });
+
+  test("URL extraction handles URLs with query params and fragments", async () => {
+    const content = "Check https://example.com/path?foo=bar&baz=qux#section";
+
+    const response = await handleApiV1(
+      createRequest(
+        "POST",
+        "/api/v1/messages",
+        {
+          topic_id: topicId,
+          sender: "agent-1",
+          content_raw: content,
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+
+    expect(response.status).toBe(201);
+
+    const attachments = db
+      .query("SELECT * FROM topic_attachments WHERE topic_id = ?")
+      .all(topicId) as any[];
+
+    expect(attachments.length).toBe(1);
+    expect(JSON.parse(attachments[0].value_json).url).toBe("https://example.com/path?foo=bar&baz=qux#section");
+  });
+
+  test("URL extraction cleans trailing punctuation", async () => {
+    const content = "See https://example.com. and https://test.org!";
+
+    const response = await handleApiV1(
+      createRequest(
+        "POST",
+        "/api/v1/messages",
+        {
+          topic_id: topicId,
+          sender: "agent-1",
+          content_raw: content,
+        },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+
+    expect(response.status).toBe(201);
+
+    const attachments = db
+      .query("SELECT * FROM topic_attachments WHERE topic_id = ? ORDER BY id")
+      .all(topicId) as any[];
+
+    expect(attachments.length).toBe(2);
+    const urls = attachments.map((a: any) => JSON.parse(a.value_json).url).sort();
+    expect(urls).toEqual(["https://example.com", "https://test.org"]);
+  });
+});

@@ -1,5 +1,5 @@
 /**
- * Linkifier plugin derived pipeline for @agentchat/hub
+ * Linkifier plugin derived pipeline for @agentlip/hub
  * 
  * Implements bd-16d.4.5 (linkifier plugins → enrichments + message.enriched).
  * 
@@ -19,7 +19,7 @@
  * 
  * Usage Example:
  * ```typescript
- * import { runLinkifierPluginsForMessage } from "@agentchat/hub/src/linkifierDerived";
+ * import { runLinkifierPluginsForMessage } from "@agentlip/hub/src/linkifierDerived";
  * 
  * const eventIds = await runLinkifierPluginsForMessage({
  *   db,
@@ -40,7 +40,7 @@ import { runPlugin } from "./pluginRuntime";
 import type { Enrichment, MessageInput } from "./pluginRuntime";
 import { withMessageStalenessGuard, captureSnapshot } from "./derivedStaleness";
 import type { CurrentMessageState } from "./derivedStaleness";
-import { insertEvent } from "@agentchat/kernel";
+import { insertEvent } from "@agentlip/kernel";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types

@@ -14,7 +14,7 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { unlinkSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Database } from "bun:sqlite";
-import { openDb, runMigrations, insertEvent } from "@agentchat/kernel";
+import { openDb, runMigrations, insertEvent } from "@agentlip/kernel";
 import { createWsHub, createWsHandlers } from "./wsEndpoint";
 import { generateAuthToken } from "./authToken";
 
@@ -1234,7 +1234,7 @@ describe("Retopic Edge Cases (Gate D)", () => {
 
           if (msg.type === "hello_ok") {
             // Perform retopic
-            const { retopicMessage } = require("@agentchat/kernel");
+            const { retopicMessage } = require("@agentlip/kernel");
             const result = retopicMessage({
               db: ctx.db,
               messageId: msgId,
@@ -1344,7 +1344,7 @@ describe("Retopic Edge Cases (Gate D)", () => {
 
           if (msg.type === "hello_ok") {
             // Perform retopic
-            const { retopicMessage } = require("@agentchat/kernel");
+            const { retopicMessage } = require("@agentlip/kernel");
             const result = retopicMessage({
               db: ctx.db,
               messageId: msgId,
@@ -1454,7 +1454,7 @@ describe("Retopic Edge Cases (Gate D)", () => {
 
           if (msg.type === "hello_ok") {
             // Perform retopic
-            const { retopicMessage } = require("@agentchat/kernel");
+            const { retopicMessage } = require("@agentlip/kernel");
             const result = retopicMessage({
               db: ctx.db,
               messageId: msgId,
@@ -1570,8 +1570,8 @@ describe("Retopic Edge Cases (Gate D)", () => {
 
           if (msg.type === "hello_ok") {
             // Attempt cross-channel retopic (should fail)
-            const { retopicMessage, CrossChannelMoveError } = require("@agentchat/kernel");
-            const { getLatestEventId } = require("@agentchat/kernel");
+            const { retopicMessage, CrossChannelMoveError } = require("@agentlip/kernel");
+            const { getLatestEventId } = require("@agentlip/kernel");
             
             const eventsBefore = getLatestEventId(ctx.db);
 
@@ -1728,7 +1728,7 @@ describe("Retopic Edge Cases (Gate D)", () => {
       await allHandshakesPromise;
 
       // All clients handshaked, now perform retopic
-      const { retopicMessage } = require("@agentchat/kernel");
+      const { retopicMessage } = require("@agentlip/kernel");
       const result = retopicMessage({
         db: ctx.db,
         messageId: msgId,

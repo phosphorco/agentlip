@@ -1,13 +1,13 @@
 /**
- * Server discovery and health validation for AgentChat SDK
+ * Server discovery and health validation for Agentlip SDK
  * 
- * Reads .zulip/server.json and validates hub connectivity via /health endpoint.
+ * Reads .agentlip/server.json and validates hub connectivity via /health endpoint.
  */
 
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
-import { discoverWorkspaceRoot } from "@agentchat/workspace";
-import { PROTOCOL_VERSION, type HealthResponse } from "@agentchat/protocol";
+import { discoverWorkspaceRoot } from "@agentlip/workspace";
+import { PROTOCOL_VERSION, type HealthResponse } from "@agentlip/protocol";
 import type { ServerJsonData } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -31,7 +31,7 @@ export interface HubConnectionInfo {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Read server.json from workspace .zulip directory.
+ * Read server.json from workspace .agentlip directory.
  * 
  * @param workspaceRoot - Absolute path to workspace root
  * @returns ServerJsonData or null if file doesn't exist
@@ -40,7 +40,7 @@ export interface HubConnectionInfo {
 export async function readServerJson(
   workspaceRoot: string
 ): Promise<ServerJsonData | null> {
-  const serverJsonPath = join(workspaceRoot, ".zulip", "server.json");
+  const serverJsonPath = join(workspaceRoot, ".agentlip", "server.json");
 
   try {
     const content = await fs.readFile(serverJsonPath, "utf-8");

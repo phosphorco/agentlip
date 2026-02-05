@@ -54,7 +54,7 @@ interface ServerJsonData {
 - ✅ JSON content preserved correctly (all fields)
 - ✅ Read returns null for missing file (not error)
 - ✅ Remove is idempotent (no error if already gone)
-- ✅ Creates `.zulip/` directory if needed
+- ✅ Creates `.agentlip/` directory if needed
 
 **Security:**
 - Mode 0600 enforced (belt-and-suspenders: set on write + verify + chmod)
@@ -83,11 +83,11 @@ interface HealthCheckFn {
 - ✅ Prevents double acquisition when hub is live
 - ✅ Staleness detection: calls `healthCheck(serverJson)`
 - ✅ Removes stale locks and retries (max 3 attempts)
-- ✅ Creates `.zulip/locks/` directory if needed
+- ✅ Creates `.agentlip/locks/` directory if needed
 - ✅ Release is idempotent
 
 **Behavior:**
-- Lock path: `.zulip/locks/writer.lock`
+- Lock path: `.agentlip/locks/writer.lock`
 - Staleness check:
   1. Read `server.json` (if missing → stale)
   2. Call `healthCheck(serverJson)` (if false or throws → stale)
@@ -102,7 +102,7 @@ interface HealthCheckFn {
 **Test script:** `packages/hub/test-infra.ts`
 
 ```
-🧪 AgentChat Hub Infrastructure Verification
+🧪 Agentlip Hub Infrastructure Verification
 
 === Test 1: Auth Token Generation ===
 ✅ Token length: 64 hex chars (256-bit entropy)
@@ -187,10 +187,10 @@ await removeServerJson({ workspaceRoot });
 await releaseWriterLock({ workspaceRoot });
 ```
 
-### CLI Integration (`agentchatd status`)
+### CLI Integration (`agentlipd status`)
 
 ```typescript
-import { readServerJson } from "@agentchat/hub";
+import { readServerJson } from "@agentlip/hub";
 
 const serverJson = await readServerJson({ workspaceRoot });
 if (!serverJson) {
@@ -239,7 +239,7 @@ console.log("✓ Hub running:", health);
 1. Close beads bd-16d.1.6, bd-16d.1.8, bd-16d.1.9
 2. Integrate these modules into hub startup sequence (bd-16d.1.7: main startup)
 3. Implement HTTP /health endpoint (bd-16d.1.10)
-4. Implement CLI `agentchatd status` (bd-16d.1.11)
+4. Implement CLI `agentlipd status` (bd-16d.1.11)
 
 **Dependencies unblocked:**
 - bd-16d.1.11: CLI status command (needs server.json reader)

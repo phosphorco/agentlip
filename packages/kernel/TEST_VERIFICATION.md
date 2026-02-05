@@ -4,7 +4,7 @@
 
 ### Coverage Summary
 
-Comprehensive unit tests have been added for @agentchat/kernel schema and query contracts, meeting all Gate A requirements for bead bd-16d.6.1.
+Comprehensive unit tests have been added for @agentlip/kernel schema and query contracts, meeting all Gate A requirements for bead bd-16d.6.1.
 
 ### Test Categories
 

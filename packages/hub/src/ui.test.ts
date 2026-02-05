@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { startHub, type HubServer } from "./index";
-import { openDb } from "@agentchat/kernel";
+import { openDb } from "@agentlip/kernel";
 
 describe("UI endpoints", () => {
   let hub: HubServer;

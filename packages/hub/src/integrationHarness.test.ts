@@ -10,7 +10,7 @@
 
 import { describe, it, expect, afterEach } from "bun:test";
 import { existsSync } from "node:fs";
-import { openDb } from "@agentchat/kernel";
+import { openDb } from "@agentlip/kernel";
 import { createTempWorkspace, startTestHub, wsConnect } from "./integrationHarness";
 
 const TEST_TOKEN = "test_harness_token_xyz123";
@@ -26,7 +26,7 @@ describe("createTempWorkspace", () => {
     workspaces.length = 0;
   });
 
-  it("creates temp directory with .zulip/db.sqlite3", async () => {
+  it("creates temp directory with .agentlip/db.sqlite3", async () => {
     const workspace = await createTempWorkspace();
     workspaces.push(workspace);
 
@@ -35,7 +35,7 @@ describe("createTempWorkspace", () => {
     expect(existsSync(workspace.dbPath)).toBe(true);
 
     // Verify dbPath is correct relative to root
-    expect(workspace.dbPath).toContain(".zulip");
+    expect(workspace.dbPath).toContain(".agentlip");
     expect(workspace.dbPath).toContain("db.sqlite3");
   });
 

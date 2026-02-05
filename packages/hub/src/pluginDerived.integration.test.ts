@@ -47,7 +47,7 @@ describe("Plugin derived pipelines (hub integration)", () => {
       );
 
       await writeFile(
-        join(ws.root, "zulip.config.ts"),
+        join(ws.root, "agentlip.config.ts"),
         `export default {\n  pluginDefaults: { timeout: 2000 },\n  plugins: [\n    { name: "test-linkifier", type: "linkifier", enabled: true, module: "./plugins/linkifier.ts", config: {} },\n    { name: "test-extractor", type: "extractor", enabled: true, module: "./plugins/extractor.ts", config: {} }\n  ]\n};\n`,
         "utf-8"
       );
@@ -166,7 +166,7 @@ describe("Plugin derived pipelines (hub integration)", () => {
 
       // Configure with small timeout (100ms)
       await writeFile(
-        join(ws.root, "zulip.config.ts"),
+        join(ws.root, "agentlip.config.ts"),
         `export default {\n  pluginDefaults: { timeout: 100 },\n  plugins: [\n    { name: "hanging-linkifier", type: "linkifier", enabled: true, module: "./plugins/hanging-linkifier.ts", config: {} }\n  ]\n};\n`,
         "utf-8"
       );

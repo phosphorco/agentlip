@@ -1,10 +1,10 @@
 # Config Loader Implementation Summary
 
-## Bead: bd-16d.4.2 — zulip.config.ts loader + schema validation (workspace-root only)
+## Bead: bd-16d.4.2 — agentlip.config.ts loader + schema validation (workspace-root only)
 
 ### Implementation Overview
 
-Implemented a secure config loader for `zulip.config.ts` with schema validation and path traversal protection.
+Implemented a secure config loader for `agentlip.config.ts` with schema validation and path traversal protection.
 
 ### Files Created/Modified
 
@@ -18,7 +18,7 @@ Implemented a secure config loader for `zulip.config.ts` with schema validation 
    - Comprehensive test suite with 30 test cases
    - Tests cover: missing config, valid/invalid schemas, path traversal, integration
 
-3. **`packages/hub/example.zulip.config.ts`** (1.6 KB)
+3. **`packages/hub/example.agentlip.config.ts`** (1.6 KB)
    - Example config demonstrating full schema
 
 4. **`packages/hub/verify-config.ts`** (3.3 KB)
@@ -172,7 +172,7 @@ interface PluginConfig {
 ### Usage Example
 
 ```typescript
-import { loadWorkspaceConfig } from '@agentchat/hub';
+import { loadWorkspaceConfig } from '@agentlip/hub';
 
 const result = await loadWorkspaceConfig('/path/to/workspace');
 
@@ -225,7 +225,7 @@ The config loader is **ready for integration** but not yet wired into `startHub(
 ### Compliance with Plan
 
 **AGENTLIP_PLAN.md requirements:**
-- ✅ §4.1: "never load zulip.config.ts from untrusted parent directories"
+- ✅ §4.1: "never load agentlip.config.ts from untrusted parent directories"
 - ✅ §4.2: Load config after DB migrations, before plugin init
 - ✅ §0.8: WorkspaceConfig schema matches plan exactly
 - ✅ Gate J: Path traversal protection for plugin modules
@@ -240,7 +240,7 @@ packages/hub/src/
 ├── index.ts               (MODIFIED, +9 lines, added exports)
 
 packages/hub/
-├── example.zulip.config.ts   (NEW, 1635 bytes, documentation)
+├── example.agentlip.config.ts   (NEW, 1635 bytes, documentation)
 └── verify-config.ts          (NEW, 3267 bytes, verification)
 ```
 

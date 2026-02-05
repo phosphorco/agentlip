@@ -10,64 +10,64 @@
       },
     },
     "packages/cli": {
-      "name": "@agentchat/cli",
+      "name": "@agentlip/cli",
       "version": "0.0.0",
       "bin": {
-        "agentchat": "./src/agentchat.ts",
+        "agentlip": "./src/agentlip.ts",
       },
       "dependencies": {
-        "@agentchat/kernel": "workspace:*",
-        "@agentchat/workspace": "workspace:*",
+        "@agentlip/kernel": "workspace:*",
+        "@agentlip/workspace": "workspace:*",
       },
       "devDependencies": {
-        "@agentchat/hub": "workspace:*",
+        "@agentlip/hub": "workspace:*",
       },
     },
     "packages/client": {
-      "name": "@agentchat/client",
+      "name": "@agentlip/client",
       "version": "0.0.0",
       "dependencies": {
-        "@agentchat/protocol": "workspace:*",
-        "@agentchat/workspace": "workspace:*",
+        "@agentlip/protocol": "workspace:*",
+        "@agentlip/workspace": "workspace:*",
       },
     },
     "packages/hub": {
-      "name": "@agentchat/hub",
+      "name": "@agentlip/hub",
       "version": "0.0.0",
       "bin": {
-        "agentchatd": "./src/agentchatd.ts",
+        "agentlipd": "./src/agentlipd.ts",
       },
       "dependencies": {
-        "@agentchat/kernel": "workspace:*",
-        "@agentchat/protocol": "workspace:*",
-        "@agentchat/workspace": "workspace:*",
+        "@agentlip/kernel": "workspace:*",
+        "@agentlip/protocol": "workspace:*",
+        "@agentlip/workspace": "workspace:*",
       },
     },
     "packages/kernel": {
-      "name": "@agentchat/kernel",
+      "name": "@agentlip/kernel",
       "version": "0.0.0",
     },
     "packages/protocol": {
-      "name": "@agentchat/protocol",
+      "name": "@agentlip/protocol",
       "version": "0.0.0",
     },
     "packages/workspace": {
-      "name": "@agentchat/workspace",
+      "name": "@agentlip/workspace",
       "version": "0.0.0",
     },
   },
   "packages": {
-    "@agentchat/cli": ["@agentchat/cli@workspace:packages/cli"],
+    "@agentlip/cli": ["@agentlip/cli@workspace:packages/cli"],
 
-    "@agentchat/client": ["@agentchat/client@workspace:packages/client"],
+    "@agentlip/client": ["@agentlip/client@workspace:packages/client"],
 
-    "@agentchat/hub": ["@agentchat/hub@workspace:packages/hub"],
+    "@agentlip/hub": ["@agentlip/hub@workspace:packages/hub"],
 
-    "@agentchat/kernel": ["@agentchat/kernel@workspace:packages/kernel"],
+    "@agentlip/kernel": ["@agentlip/kernel@workspace:packages/kernel"],
 
-    "@agentchat/protocol": ["@agentchat/protocol@workspace:packages/protocol"],
+    "@agentlip/protocol": ["@agentlip/protocol@workspace:packages/protocol"],
 
-    "@agentchat/workspace": ["@agentchat/workspace@workspace:packages/workspace"],
+    "@agentlip/workspace": ["@agentlip/workspace@workspace:packages/workspace"],
 
     "@types/node": ["@types/node@25.2.0", "", { "dependencies": { "undici-types": "~7.16.0" } }, "sha512-DZ8VwRFUNzuqJ5khrvwMXHmvPe+zGayJhr2CDNiKB1WBE1ST8Djl00D0IC4vvNmHMdj6DlbYRIaFE7WHjlDl5w=="],
 

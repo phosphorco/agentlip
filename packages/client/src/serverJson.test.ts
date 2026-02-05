@@ -5,7 +5,7 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { readServerJson, validateHub, discoverAndValidateHub } from "./serverJson";
 import { ensureWorkspaceInitialized } from "./discovery";
-import { PROTOCOL_VERSION, type HealthResponse } from "@agentchat/protocol";
+import { PROTOCOL_VERSION, type HealthResponse } from "@agentlip/protocol";
 import type { ServerJsonData } from "./types";
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
@@ -15,7 +15,7 @@ describe("readServerJson", () => {
   let tempDir: string;
 
   beforeEach(async () => {
-    tempDir = join(tmpdir(), `agentchat-test-${Date.now()}`);
+    tempDir = join(tmpdir(), `agentlip-test-${Date.now()}`);
     await fs.mkdir(tempDir, { recursive: true });
     await ensureWorkspaceInitialized(tempDir);
   });
@@ -42,7 +42,7 @@ describe("readServerJson", () => {
       schema_version: 1,
     };
 
-    const serverJsonPath = join(tempDir, ".zulip", "server.json");
+    const serverJsonPath = join(tempDir, ".agentlip", "server.json");
     await fs.writeFile(serverJsonPath, JSON.stringify(serverJson, null, 2));
 
     const result = await readServerJson(tempDir);
@@ -55,14 +55,14 @@ describe("readServerJson", () => {
   });
 
   test("throws on invalid JSON", async () => {
-    const serverJsonPath = join(tempDir, ".zulip", "server.json");
+    const serverJsonPath = join(tempDir, ".agentlip", "server.json");
     await fs.writeFile(serverJsonPath, "{ invalid json }");
 
     await expect(readServerJson(tempDir)).rejects.toThrow();
   });
 
   test("throws on missing required fields", async () => {
-    const serverJsonPath = join(tempDir, ".zulip", "server.json");
+    const serverJsonPath = join(tempDir, ".agentlip", "server.json");
     await fs.writeFile(serverJsonPath, JSON.stringify({ port: 8080 }));
 
     await expect(readServerJson(tempDir)).rejects.toThrow("missing required fields");
@@ -243,7 +243,7 @@ describe("discoverAndValidateHub", () => {
   let server: ReturnType<typeof Bun.serve>;
 
   beforeEach(async () => {
-    tempDir = join(tmpdir(), `agentchat-test-${Date.now()}`);
+    tempDir = join(tmpdir(), `agentlip-test-${Date.now()}`);
     await fs.mkdir(tempDir, { recursive: true });
     await ensureWorkspaceInitialized(tempDir);
 
@@ -282,7 +282,7 @@ describe("discoverAndValidateHub", () => {
       protocol_version: PROTOCOL_VERSION,
     };
 
-    const serverJsonPath = join(tempDir, ".zulip", "server.json");
+    const serverJsonPath = join(tempDir, ".agentlip", "server.json");
     await fs.writeFile(serverJsonPath, JSON.stringify(serverJson));
 
     const result = await discoverAndValidateHub(tempDir);
@@ -295,7 +295,7 @@ describe("discoverAndValidateHub", () => {
 
   test("returns null when workspace not found", async () => {
     // Create a temp directory that exists but has no workspace
-    const nonWorkspacePath = join(tmpdir(), `agentchat-no-workspace-${Date.now()}`);
+    const nonWorkspacePath = join(tmpdir(), `agentlip-no-workspace-${Date.now()}`);
     await fs.mkdir(nonWorkspacePath, { recursive: true });
     
     try {
@@ -327,7 +327,7 @@ describe("discoverAndValidateHub", () => {
       protocol_version: PROTOCOL_VERSION,
     };
 
-    const serverJsonPath = join(tempDir, ".zulip", "server.json");
+    const serverJsonPath = join(tempDir, ".agentlip", "server.json");
     await fs.writeFile(serverJsonPath, JSON.stringify(serverJson));
 
     const result = await discoverAndValidateHub(tempDir);

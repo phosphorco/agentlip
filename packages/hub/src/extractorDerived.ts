@@ -1,5 +1,5 @@
 /**
- * Extractor plugin derived pipeline for @agentchat/hub
+ * Extractor plugin derived pipeline for @agentlip/hub
  * 
  * Implements bd-16d.4.6: execute extractor plugins on new messages,
  * insert topic_attachments with idempotency, emit topic.attachment_added events.
@@ -31,7 +31,7 @@ import {
   type PluginResult,
 } from "./pluginRuntime";
 import { withMessageStalenessGuard, captureSnapshot } from "./derivedStaleness";
-import { getMessageById, findAttachmentByDedupeKey, insertEvent } from "@agentchat/kernel";
+import { getMessageById, findAttachmentByDedupeKey, insertEvent } from "@agentlip/kernel";
 import { SIZE_LIMITS } from "./bodyParser";
 
 // ─────────────────────────────────────────────────────────────────────────────

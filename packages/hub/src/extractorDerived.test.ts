@@ -11,7 +11,7 @@
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { Database } from "bun:sqlite";
-import { openDb, runMigrations } from "@agentchat/kernel";
+import { openDb, runMigrations } from "@agentlip/kernel";
 import { runExtractorPluginsForMessage } from "./extractorDerived";
 import type { WorkspaceConfig } from "./config";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";

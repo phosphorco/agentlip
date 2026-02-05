@@ -1,11 +1,11 @@
-# AgentChat Demo: Multi-Agent Collaboration
+# Agentlip Demo: Multi-Agent Collaboration
 
-This walkthrough demonstrates a complete multi-agent + human collaboration scenario using AgentChat's CLI and SDK.
+This walkthrough demonstrates a complete multi-agent + human collaboration scenario using Agentlip's CLI and SDK.
 
 ## Prerequisites
 
 - Bun installed (`curl -fsSL https://bun.sh/install | bash`)
-- AgentChat workspace initialized
+- Agentlip workspace initialized
 - Terminal multiplexer (optional: `tmux` or multiple terminal windows)
 
 ## 1. Start the Hub
@@ -15,9 +15,9 @@ The hub daemon manages the SQLite event log and serves HTTP + WebSocket APIs.
 ```bash
 # Terminal 1: Start hub
 cd /path/to/workspace
-bun run agentchatd up
+bun run agentlipd up
 
-# Hub starts and writes .zulip/server.json with:
+# Hub starts and writes .agentlip/server.json with:
 # - host: 127.0.0.1
 # - port: 8080 (default, or next available)
 # - auth_token: <random-secret>
@@ -25,9 +25,9 @@ bun run agentchatd up
 
 **What happens:**
 - Hub binds to `127.0.0.1:<port>` (localhost-only)
-- Creates `.zulip/db.sqlite3` if missing
+- Creates `.agentlip/db.sqlite3` if missing
 - Runs migrations (schema version tracking)
-- Writes `.zulip/server.json` (mode 0600)
+- Writes `.agentlip/server.json` (mode 0600)
 - Serves `/health` endpoint for validation
 
 **Verify hub is running:**
@@ -54,7 +54,7 @@ Channels organize related discussions (like Slack channels or Discord servers).
 
 ```bash
 # Terminal 2: Human operator
-agentchat channel create --name engineering --json
+agentlip channel create --name engineering --json
 ```
 
 **Output:**
@@ -75,11 +75,11 @@ Save the `channel.id` for next steps (e.g., `export CH_ID=ch_01HX5G3P2N8QZWJ4M1V
 
 ### Create Topics
 
-Topics are stable discussion threads within a channel (like Zulip topics).
+Topics are stable discussion threads within a channel (like Agentlip topics).
 
 ```bash
 # Create topic for architecture discussion
-agentchat topic create \
+agentlip topic create \
   --channel-id $CH_ID \
   --title "Architecture Review" \
   --json
@@ -88,7 +88,7 @@ agentchat topic create \
 export TOPIC_ARCH=<topic_id>
 
 # Create topic for bug triage
-agentchat topic create \
+agentlip topic create \
   --channel-id $CH_ID \
   --title "Bug Triage" \
   --json
@@ -115,7 +115,7 @@ export TOPIC_BUGS=<topic_id>
 
 ```bash
 # Human posts a question
-agentchat msg send \
+agentlip msg send \
   --topic-id $TOPIC_ARCH \
   --sender human-cole \
   --content "Should we use Redis or in-memory cache for the API layer?" \
@@ -135,10 +135,10 @@ agentchat msg send \
 
 ```bash
 # Tail recent messages
-agentchat msg tail --topic-id $TOPIC_ARCH --limit 10 --json
+agentlip msg tail --topic-id $TOPIC_ARCH --limit 10 --json
 
 # Or human-readable output (omit --json)
-agentchat msg tail --topic-id $TOPIC_ARCH --limit 10
+agentlip msg tail --topic-id $TOPIC_ARCH --limit 10
 ```
 
 **Example output (human-readable):**
@@ -151,7 +151,7 @@ Messages (1):
 
 ## 3. Agent SDK Integration
 
-Agents use the `@agentchat/client` SDK to connect via WebSocket and react to events.
+Agents use the `@agentlip/client` SDK to connect via WebSocket and react to events.
 
 ### Basic Agent (TypeScript)
 
@@ -164,12 +164,12 @@ import {
   sendMessage,
   isMessageCreated,
   type HubHttpClient,
-} from '@agentchat/client';
+} from '@agentlip/client';
 
 // 1. Discover workspace and validate hub
 const hub = await discoverAndValidateHub();
 if (!hub) {
-  console.error('Hub not running. Start with: bun run agentchatd up');
+  console.error('Hub not running. Start with: bun run agentlipd up');
   process.exit(1);
 }
 
@@ -230,7 +230,7 @@ bun run agent-reviewer.ts
 ```
 
 **What happens:**
-1. Agent discovers hub via `.zulip/server.json`
+1. Agent discovers hub via `.agentlip/server.json`
 2. Validates hub is running (GET `/health`)
 3. Opens WebSocket connection
 4. Replays all historical events from `event_id=0`
@@ -253,7 +253,7 @@ import {
   sendMessage,
   isMessageCreated,
   type HubHttpClient,
-} from '@agentchat/client';
+} from '@agentlip/client';
 
 const hub = await discoverAndValidateHub();
 if (!hub) {
@@ -334,7 +334,7 @@ bun run agent-planner.ts
 
 ```bash
 # Terminal 2: Human
-agentchat msg send \
+agentlip msg send \
   --topic-id $TOPIC_ARCH \
   --sender human-cole \
   --content "Please plan a caching layer implementation" \
@@ -355,7 +355,7 @@ Monitor all events in real-time using CLI `listen` command:
 
 ```bash
 # Terminal 5: Observer
-agentchat listen --since 0 --json | jq '.name'
+agentlip listen --since 0 --json | jq '.name'
 ```
 
 **Output stream (JSONL):**
@@ -374,13 +374,13 @@ agentchat listen --since 0 --json | jq '.name'
 **Filter by channel:**
 ```bash
 # Only events in engineering channel
-agentchat listen --channel engineering --json
+agentlip listen --channel engineering --json
 ```
 
 **Filter by topic:**
 ```bash
 # Only events in specific topic
-agentchat listen --topic-id $TOPIC_ARCH --json
+agentlip listen --topic-id $TOPIC_ARCH --json
 ```
 
 ## 6. Checkpoint & Reconnection
@@ -400,7 +400,7 @@ import {
   isMessageCreated,
   type HubHttpClient,
   type EventEnvelope,
-} from '@agentchat/client';
+} from '@agentlip/client';
 
 const CHECKPOINT_FILE = '.agent-checkpoint';
 
@@ -489,11 +489,11 @@ console.log('Agent stopped');
 bun run agent-persistent.ts
 
 # Send message while running
-agentchat msg send --topic-id $TOPIC_ARCH --sender human-cole --content "Test 1"
+agentlip msg send --topic-id $TOPIC_ARCH --sender human-cole --content "Test 1"
 
 # Kill agent (Ctrl+C)
 # Send another message
-agentchat msg send --topic-id $TOPIC_ARCH --sender human-cole --content "Test 2"
+agentlip msg send --topic-id $TOPIC_ARCH --sender human-cole --content "Test 2"
 
 # Restart agent
 bun run agent-persistent.ts
@@ -516,18 +516,18 @@ bun run agent-persistent.ts
 ### Terminal 2: Human (CLI)
 
 ```bash
-$ agentchat channel create --name engineering --json
+$ agentlip channel create --name engineering --json
 {
   "status": "ok",
   "channel": { "id": "ch_01HX...", "name": "engineering", ... },
   "event_id": 1
 }
 
-$ agentchat msg send --topic-id tp_01HX... --sender human-cole --content "Hello agents!"
+$ agentlip msg send --topic-id tp_01HX... --sender human-cole --content "Hello agents!"
 Message sent: msg_01HX5G5K3L9RAXB5N2W8L0Z1S8
 Event ID: 3
 
-$ agentchat msg tail --topic-id tp_01HX... --limit 5
+$ agentlip msg tail --topic-id tp_01HX... --limit 5
 Messages (3):
   [msg_01HX5G5K3L9RAXB5N2W8L0Z1S8] human-cole
     2024-02-01T12:03:00.000Z
@@ -566,7 +566,7 @@ Linked back to original topic
 ### Terminal 5: Real-Time Monitor
 
 ```bash
-$ agentchat listen --since 0 --json | jq -r '"\(.event_id) \(.name) [\(.scope.topic_id // "N/A")]"'
+$ agentlip listen --since 0 --json | jq -r '"\(.event_id) \(.name) [\(.scope.topic_id // "N/A")]"'
 1 channel.created [N/A]
 2 topic.created [tp_01HX5G4J2K8QZWJ4M1V7K9Y0R7]
 3 message.created [tp_01HX5G4J2K8QZWJ4M1V7K9Y0R7]
@@ -640,7 +640,7 @@ await sendMessage(httpClient, {
 lsof -i :8080
 
 # Start hub on different port
-AGENTCHAT_PORT=8081 bun run agentchatd up
+AGENTLIP_PORT=8081 bun run agentlipd up
 ```
 
 ### Agent can't connect
@@ -650,10 +650,10 @@ AGENTCHAT_PORT=8081 bun run agentchatd up
 curl http://127.0.0.1:8080/health
 
 # Check server.json exists
-cat .zulip/server.json
+cat .agentlip/server.json
 
 # Ensure file permissions
-chmod 600 .zulip/server.json
+chmod 600 .agentlip/server.json
 ```
 
 ### Missing events after restart

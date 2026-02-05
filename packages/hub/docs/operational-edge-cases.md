@@ -1,6 +1,6 @@
 # Operational Edge Cases - Test Coverage Summary
 
-This document summarizes the deterministic operational edge-case test suite for `@agentchat/hub`.
+This document summarizes the deterministic operational edge-case test suite for `@agentlip/hub`.
 
 ## Test Location
 
@@ -21,12 +21,12 @@ This document summarizes the deterministic operational edge-case test suite for 
 ### 2. server.json Permission Errors (Daemon Mode)
 
 **Tests:**
-- ✅ `fails when .zulip directory is read-only` - Hub cannot write server.json when directory lacks write permission
+- ✅ `fails when .agentlip directory is read-only` - Hub cannot write server.json when directory lacks write permission
 - ⏭️ `fails when server.json exists and is read-only` - **SKIPPED**: Platform-specific behavior (atomic rename can overwrite read-only files)
 - ✅ `succeeds when server.json is writable` - Normal daemon mode startup with proper permissions
 
 **Edge cases covered:**
-- Read-only `.zulip/` directory (hub fails with `EACCES`/`EPERM`)
+- Read-only `.agentlip/` directory (hub fails with `EACCES`/`EPERM`)
 - server.json mode verification (0600 required)
 - Atomic write implementation (temp file + rename)
 
@@ -53,13 +53,13 @@ This document summarizes the deterministic operational edge-case test suite for 
 ### 4. Permission Errors for Directory Creation
 
 **Tests:**
-- ✅ `fails when workspace root is read-only` - Cannot create `.zulip/` when workspace is read-only
-- ✅ `fails when .zulip/locks directory cannot be created` - Cannot create lock file when `.zulip/` is read-only
+- ✅ `fails when workspace root is read-only` - Cannot create `.agentlip/` when workspace is read-only
+- ✅ `fails when .agentlip/locks directory cannot be created` - Cannot create lock file when `.agentlip/` is read-only
 - ✅ `succeeds when all directories are writable` - Normal daemon mode initialization
 
 **Edge cases covered:**
 - Read-only workspace root
-- Read-only `.zulip/` directory
+- Read-only `.agentlip/` directory
 - Successful directory creation with proper permissions
 
 ### 5. Lock Staleness Detection (Low-Level)

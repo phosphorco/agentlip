@@ -1,4 +1,4 @@
-# Agent Instructions for AgentChat
+# Agent Instructions for Agentlip
 
 ## Orientation (read this first)
 
@@ -8,9 +8,9 @@ This is a **Bun + TypeScript monorepo** with 6 workspace packages under `package
 packages/
   protocol/    # Shared types (error codes, health response)
   kernel/      # SQLite schema, migrations, events, queries, mutations
-  workspace/   # Workspace discovery (.zulip/ upward walk)
+  workspace/   # Workspace discovery (.agentlip/ upward walk)
   hub/         # Bun HTTP+WS server, plugin runtime, UI
-  cli/         # Stateless CLI (agentchat)
+  cli/         # Stateless CLI (agentlip)
   client/      # TypeScript SDK (discovery, WS, typed events, mutations)
 ```
 
@@ -43,7 +43,7 @@ await workspace.cleanup();
 
 **To create events in tests**, use the real API chain — never invent endpoints:
 ```typescript
-import { createChannel, createTopic, sendMessage } from "@agentchat/client";
+import { createChannel, createTopic, sendMessage } from "@agentlip/client";
 const client = { baseUrl: hub.url, authToken: "test-token" };
 const ch = await createChannel(client, { name: "test-ch" });
 const tp = await createTopic(client, { channelId: ch.channel.id, title: "test-tp" });

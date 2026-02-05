@@ -1,5 +1,5 @@
 /**
- * Message mutation helpers for @agentchat/kernel
+ * Message mutation helpers for @agentlip/kernel
  * 
  * Implements bd-16d.2.6 (edit + tombstone delete) and bd-16d.2.8 (retopic)
  * 

@@ -1,5 +1,5 @@
 /**
- * Typed event envelope processing for AgentChat SDK
+ * Typed event envelope processing for Agentlip SDK
  * 
  * Provides TypeScript discriminated unions for known event types,
  * type guards, and async iterator wrapper for type-safe event handling.

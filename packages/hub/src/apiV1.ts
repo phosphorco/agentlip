@@ -1,5 +1,5 @@
 /**
- * AgentChat Hub HTTP API v1 handler
+ * Agentlip Hub HTTP API v1 handler
  * 
  * Pure handler module implementing all /api/v1/* endpoints:
  * - GET /api/v1/channels
@@ -45,7 +45,7 @@ import {
   insertEvent,
   replayEvents,
   getLatestEventId,
-} from "@agentchat/kernel";
+} from "@agentlip/kernel";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types

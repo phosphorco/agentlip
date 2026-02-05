@@ -1,5 +1,5 @@
 /**
- * Integration test harness utilities for @agentchat/hub
+ * Integration test harness utilities for @agentlip/hub
  * 
  * Provides reusable helpers for integration tests:
  * - createTempWorkspace: temp directory + DB + migrations
@@ -10,8 +10,8 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promises as fs } from "node:fs";
-import { openDb, runMigrations } from "@agentchat/kernel";
-import { ensureWorkspaceInitialized } from "@agentchat/workspace";
+import { openDb, runMigrations } from "@agentlip/kernel";
+import { ensureWorkspaceInitialized } from "@agentlip/workspace";
 import { startHub, type HubServer } from "./index";
 
 const MIGRATIONS_DIR = join(__dirname, "../../../migrations");
@@ -59,7 +59,7 @@ export interface WsTestClient {
  * 
  * Precedence:
  * 1. Explicit options.enableFts (if provided)
- * 2. AGENTCHAT_ENABLE_FTS env var (1=enabled, 0=disabled)
+ * 2. AGENTLIP_ENABLE_FTS env var (1=enabled, 0=disabled)
  * 3. Default: false
  */
 function resolveFtsEnabled(enableFts?: boolean): boolean {
@@ -67,7 +67,7 @@ function resolveFtsEnabled(enableFts?: boolean): boolean {
     return enableFts;
   }
   
-  const envValue = process.env.AGENTCHAT_ENABLE_FTS;
+  const envValue = process.env.AGENTLIP_ENABLE_FTS;
   if (envValue === "1") return true;
   if (envValue === "0") return false;
   
@@ -79,19 +79,19 @@ function resolveFtsEnabled(enableFts?: boolean): boolean {
  * 
  * Creates:
  * - Temp directory in OS tmpdir
- * - .zulip/db.sqlite3 file
+ * - .agentlip/db.sqlite3 file
  * - Runs kernel migrations (schema v1, optionally FTS)
  * 
  * FTS enablement can be controlled via:
  * - Explicit options.enableFts parameter
- * - AGENTCHAT_ENABLE_FTS environment variable (1=enabled, 0=disabled)
+ * - AGENTLIP_ENABLE_FTS environment variable (1=enabled, 0=disabled)
  * - Default: false
  * 
  * @param options - Configuration options
  * @returns TempWorkspace with cleanup function
  */
 export async function createTempWorkspace(options?: {
-  /** Enable FTS (opportunistic, non-fatal). If undefined, uses AGENTCHAT_ENABLE_FTS env var. */
+  /** Enable FTS (opportunistic, non-fatal). If undefined, uses AGENTLIP_ENABLE_FTS env var. */
   enableFts?: boolean;
 }): Promise<TempWorkspace> {
   const enableFts = resolveFtsEnabled(options?.enableFts);
@@ -99,11 +99,11 @@ export async function createTempWorkspace(options?: {
   // Create unique temp directory
   const timestamp = Date.now();
   const random = Math.random().toString(36).slice(2);
-  const root = join(tmpdir(), `agentchat-test-${timestamp}-${random}`);
+  const root = join(tmpdir(), `agentlip-test-${timestamp}-${random}`);
 
   await fs.mkdir(root, { recursive: true });
 
-  // Initialize workspace (.zulip/db.sqlite3)
+  // Initialize workspace (.agentlip/db.sqlite3)
   const { dbPath } = await ensureWorkspaceInitialized(root);
 
   // Run migrations
@@ -134,7 +134,7 @@ export async function createTempWorkspace(options?: {
  * - Binds to 127.0.0.1 with random available port
  * - Optional auth token
  * - Optional rate limiting disable
- * - FTS configuration via options or AGENTCHAT_ENABLE_FTS env var
+ * - FTS configuration via options or AGENTLIP_ENABLE_FTS env var
  * - Returns TestHub with stop() cleanup
  * 
  * @param options - Hub configuration
@@ -147,7 +147,7 @@ export async function startTestHub(options?: {
   authToken?: string;
   /** Disable rate limiting (useful for stress tests) */
   rateLimitDisabled?: boolean;
-  /** Enable FTS (opportunistic, non-fatal). If undefined, uses AGENTCHAT_ENABLE_FTS env var. */
+  /** Enable FTS (opportunistic, non-fatal). If undefined, uses AGENTLIP_ENABLE_FTS env var. */
   enableFts?: boolean;
 }): Promise<TestHub> {
   const { workspaceRoot, authToken, rateLimitDisabled = false, enableFts } = options ?? {};
@@ -158,7 +158,7 @@ export async function startTestHub(options?: {
     authToken,
     disableRateLimiting: rateLimitDisabled,
     enableFts: resolveFtsEnabled(enableFts),
-    dbPath: workspaceRoot ? join(workspaceRoot, ".zulip", "db.sqlite3") : undefined,
+    dbPath: workspaceRoot ? join(workspaceRoot, ".agentlip", "db.sqlite3") : undefined,
   });
 
   const url = `http://${server.host}:${server.port}`;

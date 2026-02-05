@@ -21,7 +21,7 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { openDb } from "@agentchat/kernel";
+import { openDb } from "@agentlip/kernel";
 import type { Database } from "bun:sqlite";
 import { createTempWorkspace } from "./integrationHarness";
 import { runLinkifierPluginsForMessage } from "./linkifierDerived";

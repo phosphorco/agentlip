@@ -41,7 +41,7 @@ function assert(condition: boolean, message: string) {
 }
 
 async function createTestWorkspace(): Promise<string> {
-  const testDir = join(tmpdir(), `agentchat-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const testDir = join(tmpdir(), `agentlip-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   await mkdir(testDir, { recursive: true });
   return testDir;
 }
@@ -101,7 +101,7 @@ async function testServerJson() {
     await writeServerJson({ workspaceRoot, data: testData });
 
     // Verify file exists
-    const serverJsonPath = join(workspaceRoot, ".zulip", "server.json");
+    const serverJsonPath = join(workspaceRoot, ".agentlip", "server.json");
     const stats = await stat(serverJsonPath);
     assert(stats.isFile(), "server.json should exist as file");
 
@@ -198,7 +198,7 @@ async function testLock() {
 
 // Run all tests
 async function main() {
-  console.log("🧪 AgentChat Hub Infrastructure Verification\n");
+  console.log("🧪 Agentlip Hub Infrastructure Verification\n");
   console.log("Testing: authToken, serverJson, lock modules");
 
   try {

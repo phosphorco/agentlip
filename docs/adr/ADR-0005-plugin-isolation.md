@@ -8,7 +8,7 @@
 
 AgentLip's plugin system allows users to extend message enrichment and entity extraction via custom TypeScript/JavaScript modules. These plugins execute in response to every ingested message, making them **hot-path code** with significant operational risk:
 
-- **Workspace integrity risk**: Buggy or malicious plugins could corrupt the SQLite database, config files, or lock state in `.zulip/`
+- **Workspace integrity risk**: Buggy or malicious plugins could corrupt the SQLite database, config files, or lock state in `.agentlip/`
 - **Availability risk**: Plugins might hang indefinitely, blocking message ingestion
 - **Resource exhaustion**: Plugins could consume unbounded CPU or memory
 - **Data exfiltration**: Plugins have access to message content and could leak sensitive data
@@ -18,8 +18,8 @@ Without isolation, a single broken plugin can bring down the entire hub. The que
 ### Threat Model
 
 **In-scope threats (must protect against):**
-1. **Accidental corruption**: Buggy plugin writes to wrong file path (e.g., `writeFile(".zulip/db.sqlite3", ...)`)
-2. **Path traversal**: Plugin uses relative paths to escape workspace (e.g., `../../../.zulip/db.sqlite3`)
+1. **Accidental corruption**: Buggy plugin writes to wrong file path (e.g., `writeFile(".agentlip/db.sqlite3", ...)`)
+2. **Path traversal**: Plugin uses relative paths to escape workspace (e.g., `../../../.agentlip/db.sqlite3`)
 3. **Naive malicious plugin**: Straightforward write attempts without sophisticated bypass techniques
 4. **Indefinite hangs**: Plugin enters infinite loop or waits on unresolved promise
 5. **Cascading failures**: Single plugin failure shouldn't affect other plugins or hub operation
@@ -27,13 +27,13 @@ Without isolation, a single broken plugin can bring down the entire hub. The que
 **Out-of-scope threats (residual risk accepted for v1):**
 1. **Sophisticated malicious plugins**: Native modules, FFI, syscalls, memory corruption
 2. **Data exfiltration via network**: Plugin sends message content to external service (workspace is localhost-only; user trusts their plugins)
-3. **Read access to `.zulip/`**: Plugin reads database schema or config (future: explicit RPC layer)
+3. **Read access to `.agentlip/`**: Plugin reads database schema or config (future: explicit RPC layer)
 4. **Resource exhaustion within timeout**: Plugin maxes CPU/memory until timeout expires
 5. **Side-channel attacks**: Timing attacks, speculative execution (Bun Workers share process memory)
 
 **Trust assumptions:**
 - Workspace is **single-user, localhost-only, trusted environment**
-- Plugin installation is **explicit opt-in** via `zulip.config.ts` (user chooses plugins)
+- Plugin installation is **explicit opt-in** via `agentlip.config.ts` (user chooses plugins)
 - Workspace owner **trusts the plugins they install** (similar to npm dependencies)
 
 ## Decision
@@ -119,7 +119,7 @@ const data = await Promise.race([resultPromise, timeoutPromise]);
 
 #### 3. Filesystem Guards (`pluginWorker.ts`, lines 45-195)
 
-The Worker script installs **runtime guards** that wrap Node.js `fs` module methods to detect and block writes to `.zulip/`:
+The Worker script installs **runtime guards** that wrap Node.js `fs` module methods to detect and block writes to `.agentlip/`:
 
 **Wrapped methods (async promises API):**
 - `fs.writeFile`, `fs.appendFile`, `fs.mkdir`, `fs.rm`, `fs.rmdir`, `fs.unlink`
@@ -128,32 +128,32 @@ The Worker script installs **runtime guards** that wrap Node.js `fs` module meth
 **Wrapped methods (sync API):**
 - `fsSync.writeFileSync`, `fsSync.appendFileSync`, `fsSync.mkdirSync`, `fsSync.rmSync`, `fsSync.rmdirSync`, `fsSync.unlinkSync`, `fsSync.openSync`
 
-**Path detection logic** (`isZulipPath()`, lines 60-72):
+**Path detection logic** (`isAgentlipPath()`, lines 60-72):
 ```typescript
-function isZulipPath(targetPath: string): boolean {
+function isAgentlipPath(targetPath: string): boolean {
   const normalized = normalize(resolve(targetPath));
   const parts = normalized.split(sep);
-  return parts.includes(".zulip");
+  return parts.includes(".agentlip");
 }
 ```
 
 - Resolves path to **absolute normalized form** (handles `../`, `./`, symlinks via `resolve()`)
 - Splits by path separator (`/` or `\`)
-- Blocks if **any path component** equals exactly `".zulip"`
+- Blocks if **any path component** equals exactly `".agentlip"`
 
 **Error on violation:**
 ```
-Plugin isolation violation: write access to .zulip/ directory is forbidden
+Plugin isolation violation: write access to .agentlip/ directory is forbidden
 ```
 
 **Guarantees:**
-- Plugins **cannot write** to `.zulip/db.sqlite3`, `.zulip/server.json`, `.zulip/locks/`, etc. via standard fs APIs
-- Path traversal attacks blocked (`../../.zulip/` resolved to absolute path before check)
-- Nested `.zulip` directories blocked (e.g., `/tmp/test/.zulip/file`)
+- Plugins **cannot write** to `.agentlip/db.sqlite3`, `.agentlip/server.json`, `.agentlip/locks/`, etc. via standard fs APIs
+- Path traversal attacks blocked (`../../.agentlip/` resolved to absolute path before check)
+- Nested `.agentlip` directories blocked (e.g., `/tmp/test/.agentlip/file`)
 
 **Limitations (acknowledged trade-offs):**
 1. **Not cryptographic sandboxing**: Guards are runtime wrappers, not OS-level enforcement
-2. **Read access allowed**: Plugins **can read** `.zulip/` files (intentional; future may add explicit RPC for safe DB queries)
+2. **Read access allowed**: Plugins **can read** `.agentlip/` files (intentional; future may add explicit RPC for safe DB queries)
 3. **Bypass vectors exist** (low likelihood, requires sophistication):
    - Native modules calling syscalls directly
    - Bun FFI to call libc functions
@@ -181,7 +181,7 @@ interface EnrichInput {
 ```
 
 **Rationale:**
-- Reduces surface area for accidental `.zulip` writes (plugin doesn't know where `.zulip` is)
+- Reduces surface area for accidental `.agentlip` writes (plugin doesn't know where `.agentlip` is)
 - **Not security through obscurity**: Combined with runtime guards, makes accidental writes harder while guards block intentional ones
 
 **Limitation:**
@@ -254,7 +254,7 @@ interface Attachment {
 **Approach:** Spawn plugin in separate child process with restricted permissions (chroot, seccomp-bpf, pledge, etc.)
 
 **Pros:**
-- **True OS-level isolation**: Plugin cannot access `.zulip/` even with native code
+- **True OS-level isolation**: Plugin cannot access `.agentlip/` even with native code
 - **Resource limits**: Can enforce CPU time, memory, file descriptor limits via rlimit or cgroups
 - **Stronger security**: No shared memory, no bypass via FFI/native modules
 
@@ -271,7 +271,7 @@ interface Attachment {
 **Approach:** Execute plugins via Deno with explicit `--allow-*` flags (deny-by-default)
 
 **Pros:**
-- **Explicit capabilities**: Can grant `--allow-read=/tmp` without allowing `.zulip/` access
+- **Explicit capabilities**: Can grant `--allow-read=/tmp` without allowing `.agentlip/` access
 - **Mature sandboxing**: Deno's permission model is battle-tested
 - **Network restrictions**: Can block network entirely or allow specific domains
 
@@ -326,7 +326,7 @@ interface Attachment {
 **Cons:**
 - **No fault isolation**: Plugin crash crashes hub
 - **No timeout enforcement**: Plugin hang blocks hub
-- **No filesystem protection**: Plugin can corrupt `.zulip/`
+- **No filesystem protection**: Plugin can corrupt `.agentlip/`
 
 **Decision:** Rejected (operational risk too high for hot-path code).
 
@@ -334,20 +334,20 @@ interface Attachment {
 
 ### Positive
 
-1. **Workspace integrity protected**: Accidental and naive malicious writes to `.zulip/` are blocked
+1. **Workspace integrity protected**: Accidental and naive malicious writes to `.agentlip/` are blocked
 2. **Availability guaranteed**: Timeouts + circuit breaker ensure hub continues processing messages even when plugins fail
 3. **Fast execution**: Worker threads have ~5ms spawn overhead (vs. ~50ms for subprocess)
 4. **Simple implementation**: ~400 LOC total (runtime + worker + guards + circuit breaker)
 5. **Testable**: Isolation behavior verified by 15 tests (`packages/hub/src/pluginIsolation.test.ts`)
 6. **Graceful degradation**: Circuit breaker allows transient failures while preventing cascading failures
-7. **Legitimate use cases preserved**: Plugins can still read `.zulip/` (for future safe DB query APIs), write to other paths, access network
+7. **Legitimate use cases preserved**: Plugins can still read `.agentlip/` (for future safe DB query APIs), write to other paths, access network
 
 ### Negative
 
 1. **Not cryptographic sandboxing**: Sophisticated malicious plugins can bypass guards (residual risk accepted for v1)
 2. **Network exfiltration possible**: Plugins can send message content to external services (workspace is localhost; user trusts plugins)
 3. **Resource exhaustion within timeout**: Plugin can max CPU/memory for 5s before being killed
-4. **Read access to `.zulip/`**: Plugins can inspect DB schema and config (may leak sensitive metadata)
+4. **Read access to `.agentlip/`**: Plugins can inspect DB schema and config (may leak sensitive metadata)
 5. **Shared process memory**: Bun Workers share memory space (theoretical side-channel attacks)
 6. **No sub-second timeout precision**: JavaScript timer granularity limits timeout accuracy
 7. **Platform-specific behavior**: Filesystem path handling differs on Windows vs. Unix (guards tested on macOS; need Windows CI)
@@ -360,9 +360,9 @@ interface Attachment {
 - Log plugin failures to detect patterns (e.g., specific message content triggering crashes)
 
 **For plugin authors:**
-- Cannot write to `.zulip/` (database, config, locks)
+- Cannot write to `.agentlip/` (database, config, locks)
 - **Can** write to workspace root or subdirectories (for caching, temp files, etc.)
-- **Can** read `.zulip/` (for inspecting schema; use responsibly)
+- **Can** read `.agentlip/` (for inspecting schema; use responsibly)
 - **Can** access network (for URL preview, API enrichment, etc.)
 - Must complete within timeout (default 5s; configurable per plugin)
 - Failures trigger circuit breaker (3 failures → 60s cooldown)
@@ -385,7 +385,7 @@ interface Attachment {
    - Hub enforces deny-by-default (plugins get no capabilities unless granted)
    - User approves capabilities at install time
 
-3. **Read-only `.zulip/` access via RPC**:
+3. **Read-only `.agentlip/` access via RPC**:
    - Remove direct filesystem read access
    - Provide safe query API: `queryDatabase({ sql, params })`
    - Hub validates queries (read-only, no schema mutations)
@@ -410,11 +410,11 @@ interface Attachment {
 
 **Categories:**
 1. **Write protection** (11 tests):
-   - Blocks `writeFile`, `appendFile`, `mkdir`, `rm`, `rmdir`, `unlink`, `open` to `.zulip/`
+   - Blocks `writeFile`, `appendFile`, `mkdir`, `rm`, `rmdir`, `unlink`, `open` to `.agentlip/`
    - Blocks sync APIs (`writeFileSync`, etc.)
-   - Blocks relative paths (`../../.zulip/`)
-   - Blocks nested `.zulip` dirs (`/tmp/test/.zulip/`)
-   - Allows legitimate writes outside `.zulip/`
+   - Blocks relative paths (`../../.agentlip/`)
+   - Blocks nested `.agentlip` dirs (`/tmp/test/.agentlip/`)
+   - Allows legitimate writes outside `.agentlip/`
 
 2. **Path-blind execution** (2 tests):
    - Verifies no workspace path in plugin input
@@ -433,7 +433,7 @@ interface Attachment {
 **Example test:**
 ```typescript
 test("blocks writeFile to db.sqlite3", async () => {
-  const dbPath = join(testDir, ".zulip", "db.sqlite3");
+  const dbPath = join(testDir, ".agentlip", "db.sqlite3");
   const pluginPath = await createMaliciousPlugin("writeFile", dbPath);
 
   const result = await runPlugin<Enrichment[]>({
@@ -446,7 +446,7 @@ test("blocks writeFile to db.sqlite3", async () => {
   expect(result.ok).toBe(false);
   if (result.ok) return;
   expect(result.error).toContain("Plugin isolation violation");
-  expect(result.error).toContain(".zulip/");
+  expect(result.error).toContain(".agentlip/");
   
   const dbContent = await Bun.file(dbPath).text();
   expect(dbContent).toBe("fake-db"); // unchanged
@@ -478,18 +478,18 @@ test("blocks writeFile to db.sqlite3", async () => {
 
 ### Medium Likelihood (Requires Intent)
 
-1. **Symlink attack**: Plugin creates symlink targeting `.zulip/`, then writes via link
+1. **Symlink attack**: Plugin creates symlink targeting `.agentlip/`, then writes via link
    - **Current guards**: Check resolved path via `resolve()` (should block)
    - **Remaining risk**: Race condition (TOCTOU) if symlink changes between check and write
    - **Future**: Consider atomic operations or advisory locks
 
-2. **Hard link attack**: Plugin creates hard link to `.zulip/db.sqlite3`, writes via link
+2. **Hard link attack**: Plugin creates hard link to `.agentlip/db.sqlite3`, writes via link
    - **Current guards**: Hard links resolve to same inode; `resolve()` returns original path (should block)
    - **Test coverage**: Not explicitly tested (add test)
 
 ### Accepted (By Design)
 
-1. **Read access**: Plugin reads `.zulip/db.sqlite3` and leaks schema/data
+1. **Read access**: Plugin reads `.agentlip/db.sqlite3` and leaks schema/data
    - Workspace is localhost; user trusts their plugins
    - Future: Provide explicit RPC for safe DB queries
 
@@ -507,7 +507,7 @@ test("blocks writeFile to db.sqlite3", async () => {
 
 - `packages/hub/src/pluginWorker.ts` (280 lines)
   - Filesystem guards installation (lines 45-195)
-  - `isZulipPath()` path detection (lines 60-72)
+  - `isAgentlipPath()` path detection (lines 60-72)
   - RPC request handler (lines 245-280)
 
 **Tests:**
@@ -519,7 +519,7 @@ test("blocks writeFile to db.sqlite3", async () => {
 
 **Related components:**
 - `packages/hub/src/enrichmentPipeline.ts` (calls `runPlugin()`)
-- `zulip.config.ts` (plugin configuration)
+- `agentlip.config.ts` (plugin configuration)
 
 ## References
 

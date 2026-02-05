@@ -13,7 +13,7 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { openDb, runMigrations } from "@agentchat/kernel";
+import { openDb, runMigrations } from "@agentlip/kernel";
 import {
   withMessageStalenessGuard,
   captureSnapshot,

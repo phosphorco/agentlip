@@ -1,5 +1,5 @@
 /**
- * Unit tests for @agentchat/kernel schema and query contracts
+ * Unit tests for @agentlip/kernel schema and query contracts
  * 
  * Tests Gate A requirements:
  * - Schema initialization with proper meta keys

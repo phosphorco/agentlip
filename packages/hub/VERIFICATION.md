@@ -24,7 +24,7 @@
 
 **`GET /health`** (unauthenticated)
 - Always returns 200 when hub is responsive
-- Response matches `@agentchat/protocol` `HealthResponse` type
+- Response matches `@agentlip/protocol` `HealthResponse` type
 - Fields:
   - `status: "ok"`
   - `instance_id`: UUID (unique per process)
@@ -36,7 +36,7 @@
 
 ### 3. Dependencies
 
-Updated `packages/hub/package.json` to depend on `@agentchat/protocol` workspace package.
+Updated `packages/hub/package.json` to depend on `@agentlip/protocol` workspace package.
 
 ## Verification Results
 
@@ -97,7 +97,7 @@ bun -e "import {startHub} from './src/index.ts'; const h = await startHub({host:
 - `packages/hub/VERIFICATION.md` (this file)
 
 ### Modified
-- `packages/hub/package.json` (added @agentchat/protocol dependency)
+- `packages/hub/package.json` (added @agentlip/protocol dependency)
 
 ## Compliance with Spec
 

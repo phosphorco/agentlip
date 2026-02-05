@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Verification script for @agentchat/kernel package
+ * Verification script for @agentlip/kernel package
  * 
  * Tests:
  * 1. Database initialization with proper PRAGMAs
@@ -43,7 +43,7 @@ function cleanup() {
 // Clean start
 cleanup();
 
-console.log("🔍 Verifying @agentchat/kernel implementation\n");
+console.log("🔍 Verifying @agentlip/kernel implementation\n");
 console.log("=" .repeat(60));
 
 let testsPassed = 0;

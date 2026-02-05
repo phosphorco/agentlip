@@ -1,5 +1,5 @@
 /**
- * Tests for @agentchat/cli read-only commands
+ * Tests for @agentlip/cli read-only commands
  * 
  * Tests: channel list, msg tail, attachment list, search
  */
@@ -22,7 +22,7 @@ import {
   listMessages,
   listTopicAttachments,
   isFtsAvailable,
-} from "@agentchat/kernel";
+} from "@agentlip/kernel";
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -33,10 +33,10 @@ import {
  * Create a test workspace with initialized schema and seed data.
  */
 async function createTestWorkspace(tempDir: string): Promise<{ dbPath: string; db: Database }> {
-  // Create .zulip directory
-  const zulipDir = join(tempDir, ".zulip");
-  await mkdir(zulipDir, { recursive: true });
-  const dbPath = join(zulipDir, "db.sqlite3");
+  // Create .agentlip directory
+  const agentlipDir = join(tempDir, ".agentlip");
+  await mkdir(agentlipDir, { recursive: true });
+  const dbPath = join(agentlipDir, "db.sqlite3");
   
   // Create database
   const db = new Database(dbPath, { create: true });
@@ -185,7 +185,7 @@ describe("CLI read-only commands", () => {
   let attachmentId: string;
 
   beforeEach(async () => {
-    tempDir = await mkdtemp(join(tmpdir(), "agentchat-cli-test-"));
+    tempDir = await mkdtemp(join(tmpdir(), "agentlip-cli-test-"));
     const { db } = await createTestWorkspace(tempDir);
     setupDb = db;
     const seeded = seedTestData(db);
@@ -258,7 +258,7 @@ describe("CLI read-only commands", () => {
 
     test("listChannels returns empty array when no channels", async () => {
       // Create empty workspace
-      const emptyDir = await mkdtemp(join(tmpdir(), "agentchat-empty-"));
+      const emptyDir = await mkdtemp(join(tmpdir(), "agentlip-empty-"));
       try {
         const { db } = await createTestWorkspace(emptyDir);
         db.close();
@@ -499,7 +499,7 @@ describe("CLI read-only commands", () => {
 
     test("returns true when FTS table exists", async () => {
       // Create workspace with FTS enabled
-      const ftsDir = await mkdtemp(join(tmpdir(), "agentchat-fts-"));
+      const ftsDir = await mkdtemp(join(tmpdir(), "agentlip-fts-"));
       try {
         const { db } = await createTestWorkspace(ftsDir);
         
@@ -539,7 +539,7 @@ describe("CLI integration (via main function)", () => {
   let topicId: string;
 
   beforeEach(async () => {
-    tempDir = await mkdtemp(join(tmpdir(), "agentchat-cli-integ-"));
+    tempDir = await mkdtemp(join(tmpdir(), "agentlip-cli-integ-"));
     const { db } = await createTestWorkspace(tempDir);
     setupDb = db;
     const seeded = seedTestData(db);
@@ -583,7 +583,7 @@ describe("CLI integration (via main function)", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { writeFile } from "node:fs/promises";
-import { getChannelByName } from "@agentchat/kernel";
+import { getChannelByName } from "@agentlip/kernel";
 
 describe("listen command", () => {
   let tempDir: string;
@@ -591,7 +591,7 @@ describe("listen command", () => {
   let channelId: string;
 
   beforeEach(async () => {
-    tempDir = await mkdtemp(join(tmpdir(), "agentchat-listen-test-"));
+    tempDir = await mkdtemp(join(tmpdir(), "agentlip-listen-test-"));
     const { db } = await createTestWorkspace(tempDir);
     setupDb = db;
     const seeded = seedTestData(db);
@@ -616,12 +616,12 @@ describe("listen command", () => {
         started_at: new Date().toISOString(),
         protocol_version: "v1",
       };
-      const zulipDir = join(tempDir, ".zulip");
-      await writeFile(join(zulipDir, "server.json"), JSON.stringify(serverJson), "utf-8");
+      const agentlipDir = join(tempDir, ".agentlip");
+      await writeFile(join(agentlipDir, "server.json"), JSON.stringify(serverJson), "utf-8");
 
       // Read it back
       const content = JSON.parse(
-        readFileSync(join(zulipDir, "server.json"), "utf-8")
+        readFileSync(join(agentlipDir, "server.json"), "utf-8")
       );
       expect(content.host).toBe("127.0.0.1");
       expect(content.port).toBe(8080);
@@ -630,8 +630,8 @@ describe("listen command", () => {
 
     test("missing server.json is detected (hub not running)", async () => {
       // Don't create server.json - it should be missing
-      const zulipDir = join(tempDir, ".zulip");
-      const serverJsonPath = join(zulipDir, "server.json");
+      const agentlipDir = join(tempDir, ".agentlip");
+      const serverJsonPath = join(agentlipDir, "server.json");
       
       expect(existsSync(serverJsonPath)).toBe(false);
     });
@@ -829,27 +829,27 @@ describe("listen command", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Note: Full end-to-end WS tests require the hub to be running.
-// These tests use the integration harness from @agentchat/hub if available.
+// These tests use the integration harness from @agentlip/hub if available.
 
 describe("listen command (live WS)", () => {
   // Skip if hub is not available or if running in CI without hub
   const skipLiveTests = process.env.SKIP_LIVE_WS_TESTS === "1";
 
   test.skipIf(skipLiveTests)("connects to hub and receives hello_ok", async () => {
-    // This test requires @agentchat/hub test harness
+    // This test requires @agentlip/hub test harness
     // Import dynamically to avoid hard dependency
-    let createTempWorkspace: typeof import("@agentchat/hub/test-harness").createTempWorkspace;
-    let startTestHub: typeof import("@agentchat/hub/test-harness").startTestHub;
-    let wsConnect: typeof import("@agentchat/hub/test-harness").wsConnect;
+    let createTempWorkspace: typeof import("@agentlip/hub/test-harness").createTempWorkspace;
+    let startTestHub: typeof import("@agentlip/hub/test-harness").startTestHub;
+    let wsConnect: typeof import("@agentlip/hub/test-harness").wsConnect;
 
     try {
-      const harness = await import("@agentchat/hub/test-harness");
+      const harness = await import("@agentlip/hub/test-harness");
       createTempWorkspace = harness.createTempWorkspace;
       startTestHub = harness.startTestHub;
       wsConnect = harness.wsConnect;
     } catch {
       // Hub harness not available - skip
-      console.log("Skipping live WS test: @agentchat/hub harness not available");
+      console.log("Skipping live WS test: @agentlip/hub harness not available");
       return;
     }
 
@@ -885,17 +885,17 @@ describe("listen command (live WS)", () => {
   });
 
   test.skipIf(skipLiveTests)("receives events when message is created", async () => {
-    let createTempWorkspace: typeof import("@agentchat/hub/test-harness").createTempWorkspace;
-    let startTestHub: typeof import("@agentchat/hub/test-harness").startTestHub;
-    let wsConnect: typeof import("@agentchat/hub/test-harness").wsConnect;
+    let createTempWorkspace: typeof import("@agentlip/hub/test-harness").createTempWorkspace;
+    let startTestHub: typeof import("@agentlip/hub/test-harness").startTestHub;
+    let wsConnect: typeof import("@agentlip/hub/test-harness").wsConnect;
 
     try {
-      const harness = await import("@agentchat/hub/test-harness");
+      const harness = await import("@agentlip/hub/test-harness");
       createTempWorkspace = harness.createTempWorkspace;
       startTestHub = harness.startTestHub;
       wsConnect = harness.wsConnect;
     } catch {
-      console.log("Skipping live WS test: @agentchat/hub harness not available");
+      console.log("Skipping live WS test: @agentlip/hub harness not available");
       return;
     }
 
@@ -982,11 +982,11 @@ describe("mutation commands (HTTP)", () => {
   const skipLiveTests = process.env.SKIP_LIVE_WS_TESTS === "1";
 
   test.skipIf(skipLiveTests)("msg send creates a message via HTTP API", async () => {
-    let createTempWorkspace: typeof import("@agentchat/hub/test-harness").createTempWorkspace;
-    let startTestHub: typeof import("@agentchat/hub/test-harness").startTestHub;
+    let createTempWorkspace: typeof import("@agentlip/hub/test-harness").createTempWorkspace;
+    let startTestHub: typeof import("@agentlip/hub/test-harness").startTestHub;
 
     try {
-      const harness = await import("@agentchat/hub/test-harness");
+      const harness = await import("@agentlip/hub/test-harness");
       createTempWorkspace = harness.createTempWorkspace;
       startTestHub = harness.startTestHub;
     } catch {
@@ -1059,11 +1059,11 @@ describe("mutation commands (HTTP)", () => {
   });
 
   test.skipIf(skipLiveTests)("msg edit updates message with version tracking", async () => {
-    let createTempWorkspace: typeof import("@agentchat/hub/test-harness").createTempWorkspace;
-    let startTestHub: typeof import("@agentchat/hub/test-harness").startTestHub;
+    let createTempWorkspace: typeof import("@agentlip/hub/test-harness").createTempWorkspace;
+    let startTestHub: typeof import("@agentlip/hub/test-harness").startTestHub;
 
     try {
-      const harness = await import("@agentchat/hub/test-harness");
+      const harness = await import("@agentlip/hub/test-harness");
       createTempWorkspace = harness.createTempWorkspace;
       startTestHub = harness.startTestHub;
     } catch {
@@ -1138,11 +1138,11 @@ describe("mutation commands (HTTP)", () => {
   });
 
   test.skipIf(skipLiveTests)("msg edit returns VERSION_CONFLICT with details when version mismatches", async () => {
-    let createTempWorkspace: typeof import("@agentchat/hub/test-harness").createTempWorkspace;
-    let startTestHub: typeof import("@agentchat/hub/test-harness").startTestHub;
+    let createTempWorkspace: typeof import("@agentlip/hub/test-harness").createTempWorkspace;
+    let startTestHub: typeof import("@agentlip/hub/test-harness").startTestHub;
 
     try {
-      const harness = await import("@agentchat/hub/test-harness");
+      const harness = await import("@agentlip/hub/test-harness");
       createTempWorkspace = harness.createTempWorkspace;
       startTestHub = harness.startTestHub;
     } catch {
@@ -1218,11 +1218,11 @@ describe("mutation commands (HTTP)", () => {
   });
 
   test.skipIf(skipLiveTests)("msg delete tombstones message", async () => {
-    let createTempWorkspace: typeof import("@agentchat/hub/test-harness").createTempWorkspace;
-    let startTestHub: typeof import("@agentchat/hub/test-harness").startTestHub;
+    let createTempWorkspace: typeof import("@agentlip/hub/test-harness").createTempWorkspace;
+    let startTestHub: typeof import("@agentlip/hub/test-harness").startTestHub;
 
     try {
-      const harness = await import("@agentchat/hub/test-harness");
+      const harness = await import("@agentlip/hub/test-harness");
       createTempWorkspace = harness.createTempWorkspace;
       startTestHub = harness.startTestHub;
     } catch {
@@ -1305,11 +1305,11 @@ describe("mutation commands (HTTP)", () => {
   });
 
   test.skipIf(skipLiveTests)("topic rename updates title and emits event", async () => {
-    let createTempWorkspace: typeof import("@agentchat/hub/test-harness").createTempWorkspace;
-    let startTestHub: typeof import("@agentchat/hub/test-harness").startTestHub;
+    let createTempWorkspace: typeof import("@agentlip/hub/test-harness").createTempWorkspace;
+    let startTestHub: typeof import("@agentlip/hub/test-harness").startTestHub;
 
     try {
-      const harness = await import("@agentchat/hub/test-harness");
+      const harness = await import("@agentlip/hub/test-harness");
       createTempWorkspace = harness.createTempWorkspace;
       startTestHub = harness.startTestHub;
     } catch {
@@ -1366,11 +1366,11 @@ describe("mutation commands (HTTP)", () => {
   });
 
   test.skipIf(skipLiveTests)("attachment add creates attachment with deduplication", async () => {
-    let createTempWorkspace: typeof import("@agentchat/hub/test-harness").createTempWorkspace;
-    let startTestHub: typeof import("@agentchat/hub/test-harness").startTestHub;
+    let createTempWorkspace: typeof import("@agentlip/hub/test-harness").createTempWorkspace;
+    let startTestHub: typeof import("@agentlip/hub/test-harness").startTestHub;
 
     try {
-      const harness = await import("@agentchat/hub/test-harness");
+      const harness = await import("@agentlip/hub/test-harness");
       createTempWorkspace = harness.createTempWorkspace;
       startTestHub = harness.startTestHub;
     } catch {

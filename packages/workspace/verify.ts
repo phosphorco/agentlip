@@ -24,7 +24,7 @@ async function verify() {
   console.log('🔍 Workspace Discovery Verification\n');
   
   // Create temp directory for testing
-  const testRoot = join(tmpdir(), `agentchat-verify-${Date.now()}`);
+  const testRoot = join(tmpdir(), `agentlip-verify-${Date.now()}`);
   await fs.mkdir(testRoot, { recursive: true });
   console.log(`📁 Test directory: ${testRoot}\n`);
   
@@ -75,7 +75,7 @@ async function verify() {
     
     // Test 6: discoverOrInitWorkspace in new location
     console.log('Test 6: discoverOrInitWorkspace in new isolated directory');
-    const isolatedDir = join(tmpdir(), `agentchat-isolated-${Date.now()}`);
+    const isolatedDir = join(tmpdir(), `agentlip-isolated-${Date.now()}`);
     await fs.mkdir(isolatedDir, { recursive: true });
     const combined2 = await discoverOrInitWorkspace(isolatedDir);
     console.log(`  Root: ${combined2.root}`);

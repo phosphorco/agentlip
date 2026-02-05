@@ -1,8 +1,8 @@
-# @agentchat/cli
+# @agentlip/cli
 
-Stateless CLI for AgentChat workspaces. Provides:
+Stateless CLI for Agentlip workspaces. Provides:
 
-- **Workspace discovery** - finds `.zulip/db.sqlite3` by walking upward from cwd
+- **Workspace discovery** - finds `.agentlip/db.sqlite3` by walking upward from cwd
 - **Read-only DB access** - opens DB with `PRAGMA query_only=ON` for safe concurrent reads
 
 ## Installation
@@ -17,7 +17,7 @@ import {
   openWorkspaceDbReadonly,
   isQueryOnly,
   WorkspaceNotFoundError,
-} from "@agentchat/cli";
+} from "@agentlip/cli";
 
 // Discover workspace (returns null if not found)
 const discovered = await discoverWorkspaceRoot("/path/to/start");
@@ -47,13 +47,13 @@ try {
 
 ```bash
 # Run diagnostics on workspace
-agentchat doctor
+agentlip doctor
 
 # With explicit workspace path
-agentchat doctor --workspace /path/to/workspace
+agentlip doctor --workspace /path/to/workspace
 
 # JSON output
-agentchat doctor --json
+agentlip doctor --json
 ```
 
 ## Safety Guarantees

@@ -1,5 +1,5 @@
 /**
- * @agentchat/client - SDK for connecting to AgentChat hubs
+ * @agentlip/client - SDK for connecting to Agentlip hubs
  * 
  * Provides:
  * - Workspace discovery and initialization

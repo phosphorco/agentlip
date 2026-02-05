@@ -1,4 +1,4 @@
-# AgentChat Security Model
+# Agentlip Security Model
 
 > Source: implementation in `packages/hub/src/`, `packages/workspace/src/`, `docs/adr/ADR-0005-plugin-isolation.md`
 
@@ -6,13 +6,13 @@
 
 ## 1. Threat Model
 
-AgentChat is a **single-machine, localhost-only** messaging hub designed for multi-agent collaboration. The threat model assumes:
+Agentlip is a **single-machine, localhost-only** messaging hub designed for multi-agent collaboration. The threat model assumes:
 
 | Actor | Trust Level | Access |
 |-------|------------|--------|
 | Local user (human) | Trusted | Full access via auth token |
 | AI agents (local) | Trusted | Same access as human via auth token |
-| Plugin code (zulip.config.ts) | **Untrusted** | Sandboxed Worker threads, no direct DB |
+| Plugin code (agentlip.config.ts) | **Untrusted** | Sandboxed Worker threads, no direct DB |
 | Network attackers | N/A | No network surface by default (localhost-only) |
 
 **Out of scope:** remote access, multi-tenant isolation, encryption at rest, TLS.
@@ -27,7 +27,7 @@ AgentChat is a **single-machine, localhost-only** messaging hub designed for mul
 - Format: hex string (32 characters)
 
 ### Token Storage
-- Written to `.zulip/server.json` with **mode 0600** (owner read/write only)
+- Written to `.agentlip/server.json` with **mode 0600** (owner read/write only)
 - Atomic write via temp file + rename (`packages/hub/src/serverJson.ts`)
 - Token is **never logged** in error messages, responses, or diagnostic output
 
@@ -141,7 +141,7 @@ Rationale: localhost-only deployment; read access is low-risk. All mutations req
 |---------|---------|--------|
 | Bind address | `127.0.0.1` | `packages/hub/src/index.ts` |
 | server.json permissions | `0600` | `packages/hub/src/serverJson.ts` |
-| .zulip/ directory permissions | `0700` | `packages/workspace/src/index.ts` |
+| .agentlip/ directory permissions | `0700` | `packages/workspace/src/index.ts` |
 | SQLite journal mode | WAL | `packages/kernel/src/index.ts` |
 | Foreign keys | ON | `packages/kernel/src/index.ts` |
 | busy_timeout | 5000ms | `packages/kernel/src/index.ts` |
@@ -154,14 +154,14 @@ Rationale: localhost-only deployment; read access is low-risk. All mutations req
 
 ### Workspace Discovery Boundaries
 `packages/workspace/src/index.ts`:
-- Walks upward from cwd to find `.zulip/`
+- Walks upward from cwd to find `.agentlip/`
 - **Stops at:** filesystem boundary (device ID change) OR user home directory
 - Never traverses above `$HOME`
 - Prevents accidental loading of untrusted workspaces
 
 ### Lock Files
 `packages/hub/src/lock.ts`:
-- Writer lock (`.zulip/locks/writer.lock`) prevents multiple hub instances
+- Writer lock (`.agentlip/locks/writer.lock`) prevents multiple hub instances
 - PID-based liveness check for stale locks
 - Removed on clean shutdown
 

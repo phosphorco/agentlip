@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Demo script showing agentchatd status command usage.
+ * Demo script showing agentlipd status command usage.
  *
  * This demonstrates:
  * 1. Starting a hub
@@ -13,16 +13,16 @@ import { startHub } from "./src/index.js";
 import { writeServerJson, removeServerJson } from "./src/serverJson.js";
 import { discoverOrInitWorkspace } from "../workspace/src/index.js";
 import { openDb, runMigrations } from "../kernel/src/index.js";
-import { main as statusMain } from "./src/agentchatd.js";
+import { main as statusMain } from "./src/agentlipd.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 async function demo() {
-  console.log("=== AgentChat Status Command Demo ===\n");
+  console.log("=== Agentlip Status Command Demo ===\n");
 
   // Create temporary workspace
-  const tmpRoot = await mkdtemp(join(tmpdir(), "agentchat-demo-"));
+  const tmpRoot = await mkdtemp(join(tmpdir(), "agentlip-demo-"));
   console.log(`📁 Demo workspace: ${tmpRoot}\n`);
 
   try {
@@ -69,7 +69,7 @@ async function demo() {
     console.log("3. Wrote server.json\n");
 
     // Run status command (human-readable)
-    console.log("4. Running 'agentchatd status' (human-readable):");
+    console.log("4. Running 'agentlipd status' (human-readable):");
     console.log("---");
     try {
       await statusMain(["--workspace", root]);
@@ -79,7 +79,7 @@ async function demo() {
     console.log("---\n");
 
     // Run status command (JSON)
-    console.log("5. Running 'agentchatd status --json':");
+    console.log("5. Running 'agentlipd status --json':");
     console.log("---");
     try {
       await statusMain(["--workspace", root, "--json"]);
@@ -94,7 +94,7 @@ async function demo() {
     console.log("   ✓ Hub stopped\n");
 
     // Run status again (should show not running/unreachable)
-    console.log("7. Running 'agentchatd status' after hub stopped:");
+    console.log("7. Running 'agentlipd status' after hub stopped:");
     console.log("---");
     try {
       await statusMain(["--workspace", root]);
@@ -108,7 +108,7 @@ async function demo() {
     console.log("8. Removed server.json");
 
     // Run status one more time (should show not running)
-    console.log("\n9. Running 'agentchatd status' after server.json removed:");
+    console.log("\n9. Running 'agentlipd status' after server.json removed:");
     console.log("---");
     try {
       await statusMain(["--workspace", root]);

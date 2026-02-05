@@ -10,7 +10,7 @@
  */
 
 import { startHub, assertLocalhostBind } from "./src/index.js";
-import type { HealthResponse } from "@agentchat/protocol";
+import type { HealthResponse } from "@agentlip/protocol";
 
 let passed = 0;
 let failed = 0;
@@ -26,7 +26,7 @@ function assert(condition: boolean, message: string) {
 }
 
 async function test() {
-  console.log("=== AgentChat Hub Health Endpoint Verification ===\n");
+  console.log("=== Agentlip Hub Health Endpoint Verification ===\n");
   
   // Test 1: assertLocalhostBind validation
   console.log("Test 1: Host validation");

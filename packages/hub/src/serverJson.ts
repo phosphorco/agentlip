@@ -22,12 +22,12 @@ export interface ServerJsonData {
   schema_version?: number;
 }
 
-function zulipDir(workspaceRoot: string): string {
-  return join(workspaceRoot, ".zulip");
+function agentlipDir(workspaceRoot: string): string {
+  return join(workspaceRoot, ".agentlip");
 }
 
 function serverJsonPath(workspaceRoot: string): string {
-  return join(zulipDir(workspaceRoot), "server.json");
+  return join(agentlipDir(workspaceRoot), "server.json");
 }
 
 async function ensureMode0600(filePath: string): Promise<void> {
@@ -44,7 +44,7 @@ async function ensureMode0600(filePath: string): Promise<void> {
 }
 
 /**
- * Write `.zulip/server.json` atomically.
+ * Write `.agentlip/server.json` atomically.
  *
  * Requirements (AGENTLIP_PLAN.md §4.2 / Gate J):
  * - atomic write (temp file in same dir + rename)
@@ -58,7 +58,7 @@ export async function writeServerJson({
   workspaceRoot: string;
   data: ServerJsonData;
 }): Promise<void> {
-  const dir = zulipDir(workspaceRoot);
+  const dir = agentlipDir(workspaceRoot);
   await mkdir(dir, { recursive: true, mode: 0o700 });
 
   const finalPath = serverJsonPath(workspaceRoot);
@@ -103,7 +103,7 @@ export async function writeServerJson({
 }
 
 /**
- * Read and parse `.zulip/server.json`.
+ * Read and parse `.agentlip/server.json`.
  * Returns null if missing.
  */
 export async function readServerJson({
@@ -121,7 +121,7 @@ export async function readServerJson({
 }
 
 /**
- * Remove `.zulip/server.json`.
+ * Remove `.agentlip/server.json`.
  * No-op if missing.
  */
 export async function removeServerJson({

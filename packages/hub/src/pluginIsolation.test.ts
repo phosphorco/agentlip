@@ -1,13 +1,13 @@
 /**
  * Plugin isolation tests (bd-16d.4.4)
  * 
- * Verify that plugins cannot write to .zulip/ directory.
+ * Verify that plugins cannot write to .agentlip/ directory.
  * 
  * Test strategy:
  * - Create malicious plugins that attempt filesystem writes
  * - Run them via the Worker runtime harness
  * - Assert that writes are blocked with clear error messages
- * - Verify that legitimate writes (outside .zulip/) still work
+ * - Verify that legitimate writes (outside .agentlip/) still work
  */
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
@@ -27,13 +27,13 @@ beforeEach(async () => {
   testDir = join(tmpdir(), `plugin-isolation-test-${Date.now()}`);
   await mkdir(testDir, { recursive: true });
   
-  // Create .zulip directory structure
-  const zulipDir = join(testDir, ".zulip");
-  await mkdir(zulipDir, { recursive: true });
-  await writeFile(join(zulipDir, "db.sqlite3"), "fake-db");
-  await writeFile(join(zulipDir, "server.json"), "{}");
+  // Create .agentlip directory structure
+  const agentlipDir = join(testDir, ".agentlip");
+  await mkdir(agentlipDir, { recursive: true });
+  await writeFile(join(agentlipDir, "db.sqlite3"), "fake-db");
+  await writeFile(join(agentlipDir, "server.json"), "{}");
   
-  const locksDir = join(zulipDir, "locks");
+  const locksDir = join(agentlipDir, "locks");
   await mkdir(locksDir, { recursive: true });
 });
 
@@ -152,7 +152,7 @@ async function createLegitimatePlugin(): Promise<string> {
       name: "legitimate-plugin",
       version: "1.0.0",
       async enrich(input: any) {
-        // This should succeed (not in .zulip/)
+        // This should succeed (not in .agentlip/)
         await fs.writeFile("${safePath}", "legitimate data");
         
         return [{
@@ -188,9 +188,9 @@ const testInput = {
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("Plugin isolation: .zulip/ write protection", () => {
+describe("Plugin isolation: .agentlip/ write protection", () => {
   test("blocks writeFile to db.sqlite3", async () => {
-    const dbPath = join(testDir, ".zulip", "db.sqlite3");
+    const dbPath = join(testDir, ".agentlip", "db.sqlite3");
     const pluginPath = await createMaliciousPlugin("writeFile", dbPath);
 
     const result = await runPlugin<Enrichment[]>({
@@ -203,7 +203,7 @@ describe("Plugin isolation: .zulip/ write protection", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toContain("Plugin isolation violation");
-    expect(result.error).toContain(".zulip/");
+    expect(result.error).toContain(".agentlip/");
     
     // Verify db.sqlite3 unchanged
     const dbContent = await Bun.file(dbPath).text();
@@ -211,7 +211,7 @@ describe("Plugin isolation: .zulip/ write protection", () => {
   });
 
   test("blocks appendFile to server.json", async () => {
-    const serverJsonPath = join(testDir, ".zulip", "server.json");
+    const serverJsonPath = join(testDir, ".agentlip", "server.json");
     const pluginPath = await createMaliciousPlugin("appendFile", serverJsonPath);
 
     const result = await runPlugin<Enrichment[]>({
@@ -230,8 +230,8 @@ describe("Plugin isolation: .zulip/ write protection", () => {
     expect(content).toBe("{}");
   });
 
-  test("blocks mkdir in .zulip/", async () => {
-    const maliciousDir = join(testDir, ".zulip", "malicious");
+  test("blocks mkdir in .agentlip/", async () => {
+    const maliciousDir = join(testDir, ".agentlip", "malicious");
     const pluginPath = await createMaliciousPlugin("mkdir", maliciousDir);
 
     const result = await runPlugin<Enrichment[]>({
@@ -249,8 +249,8 @@ describe("Plugin isolation: .zulip/ write protection", () => {
     await expect(access(maliciousDir)).rejects.toThrow();
   });
 
-  test("blocks rm of .zulip/locks/", async () => {
-    const locksDir = join(testDir, ".zulip", "locks");
+  test("blocks rm of .agentlip/locks/", async () => {
+    const locksDir = join(testDir, ".agentlip", "locks");
     const pluginPath = await createMaliciousPlugin("rm", locksDir);
 
     const result = await runPlugin<Enrichment[]>({
@@ -268,8 +268,8 @@ describe("Plugin isolation: .zulip/ write protection", () => {
     await access(locksDir); // Should not throw
   });
 
-  test("blocks unlink of .zulip/db.sqlite3", async () => {
-    const dbPath = join(testDir, ".zulip", "db.sqlite3");
+  test("blocks unlink of .agentlip/db.sqlite3", async () => {
+    const dbPath = join(testDir, ".agentlip", "db.sqlite3");
     const pluginPath = await createMaliciousPlugin("unlink", dbPath);
 
     const result = await runPlugin<Enrichment[]>({
@@ -287,8 +287,8 @@ describe("Plugin isolation: .zulip/ write protection", () => {
     await access(dbPath); // Should not throw
   });
 
-  test("blocks open with write flag in .zulip/", async () => {
-    const targetPath = join(testDir, ".zulip", "malicious.txt");
+  test("blocks open with write flag in .agentlip/", async () => {
+    const targetPath = join(testDir, ".agentlip", "malicious.txt");
     const pluginPath = await createMaliciousPlugin("open", targetPath);
 
     const result = await runPlugin<Enrichment[]>({
@@ -306,8 +306,8 @@ describe("Plugin isolation: .zulip/ write protection", () => {
     await expect(access(targetPath)).rejects.toThrow();
   });
 
-  test("blocks writeFileSync to .zulip/", async () => {
-    const targetPath = join(testDir, ".zulip", "sync-test.txt");
+  test("blocks writeFileSync to .agentlip/", async () => {
+    const targetPath = join(testDir, ".agentlip", "sync-test.txt");
     const pluginPath = await createMaliciousPlugin("writeFileSync", targetPath);
 
     const result = await runPlugin<Enrichment[]>({
@@ -325,12 +325,12 @@ describe("Plugin isolation: .zulip/ write protection", () => {
     await expect(access(targetPath)).rejects.toThrow();
   });
 
-  test("blocks relative path attempts (../workspace/.zulip/)", async () => {
+  test("blocks relative path attempts (../workspace/.agentlip/)", async () => {
     // Create plugin in subdirectory
     const pluginDir = join(testDir, "plugins");
     await mkdir(pluginDir, { recursive: true });
     
-    const relativePath = "../.zulip/db.sqlite3";
+    const relativePath = "../.agentlip/db.sqlite3";
     const pluginPath = join(pluginDir, "relative-attack.ts");
     
     const pluginCode = `
@@ -359,7 +359,7 @@ describe("Plugin isolation: .zulip/ write protection", () => {
     expect(result.error).toContain("Plugin isolation violation");
   });
 
-  test("allows writes outside .zulip/ (legitimate plugin)", async () => {
+  test("allows writes outside .agentlip/ (legitimate plugin)", async () => {
     const pluginPath = await createLegitimatePlugin();
     const safePath = join(testDir, "safe-output.txt");
 
@@ -380,9 +380,9 @@ describe("Plugin isolation: .zulip/ write protection", () => {
     expect(content).toBe("legitimate data");
   });
 
-  test("blocks nested .zulip/ paths", async () => {
-    const nestedPath = join(testDir, "subdir", ".zulip", "nested.txt");
-    await mkdir(join(testDir, "subdir", ".zulip"), { recursive: true });
+  test("blocks nested .agentlip/ paths", async () => {
+    const nestedPath = join(testDir, "subdir", ".agentlip", "nested.txt");
+    await mkdir(join(testDir, "subdir", ".agentlip"), { recursive: true });
     
     const pluginPath = await createMaliciousPlugin("writeFile", nestedPath);
 
@@ -398,12 +398,12 @@ describe("Plugin isolation: .zulip/ write protection", () => {
     expect(result.error).toContain("Plugin isolation violation");
   });
 
-  test("blocks symlink traversal (if .zulip is target)", async () => {
+  test("blocks symlink traversal (if .agentlip is target)", async () => {
     // Create a directory that will be symlinked
     const linkSource = join(testDir, "innocent-dir");
     await mkdir(linkSource);
     
-    // Try to write to what looks like innocent-dir but might resolve to .zulip
+    // Try to write to what looks like innocent-dir but might resolve to .agentlip
     const targetPath = join(linkSource, "file.txt");
     
     const pluginPath = join(testDir, "symlink-plugin.ts");
@@ -413,7 +413,7 @@ describe("Plugin isolation: .zulip/ write protection", () => {
         name: "symlink-test",
         version: "1.0.0",
         async enrich(input: any) {
-          // This should succeed (not a .zulip path)
+          // This should succeed (not a .agentlip path)
           await fs.writeFile("${targetPath}", "data");
           return [{
             kind: "test",
@@ -451,7 +451,7 @@ describe("Plugin isolation: path-blind execution", () => {
         version: "1.0.0",
         async enrich(input: any) {
           // Inspect input for any path-like fields
-          const hasWorkspacePath = JSON.stringify(input).includes(".zulip");
+          const hasWorkspacePath = JSON.stringify(input).includes(".agentlip");
           
           return [{
             kind: "inspection",
@@ -517,7 +517,7 @@ describe("Plugin isolation: path-blind execution", () => {
 
 describe("Plugin isolation: error reporting", () => {
   test("isolation violation error includes helpful context", async () => {
-    const dbPath = join(testDir, ".zulip", "db.sqlite3");
+    const dbPath = join(testDir, ".agentlip", "db.sqlite3");
     const pluginPath = await createMaliciousPlugin("writeFile", dbPath);
 
     const result = await runPlugin<Enrichment[]>({
@@ -531,12 +531,12 @@ describe("Plugin isolation: error reporting", () => {
     if (result.ok) return;
     expect(result.code).toBe("EXECUTION_ERROR");
     expect(result.error).toContain("isolation violation");
-    expect(result.error).toContain(".zulip/");
+    expect(result.error).toContain(".agentlip/");
     expect(result.error).toContain("forbidden");
   });
 
   test("circuit breaker tracks isolation violations", async () => {
-    const dbPath = join(testDir, ".zulip", "db.sqlite3");
+    const dbPath = join(testDir, ".agentlip", "db.sqlite3");
     const pluginPath = await createMaliciousPlugin("writeFile", dbPath);
 
     // Run plugin 3 times to trigger circuit breaker

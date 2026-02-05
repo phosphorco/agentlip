@@ -1,5 +1,5 @@
 /**
- * Tests for @agentchat/cli workspace discovery and read-only DB opening
+ * Tests for @agentlip/cli workspace discovery and read-only DB opening
  */
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
@@ -20,7 +20,7 @@ describe("discoverWorkspaceRoot", () => {
   let tempDir: string;
 
   beforeEach(async () => {
-    tempDir = await mkdtemp(join(tmpdir(), "agentchat-test-"));
+    tempDir = await mkdtemp(join(tmpdir(), "agentlip-test-"));
   });
 
   afterEach(async () => {
@@ -33,10 +33,10 @@ describe("discoverWorkspaceRoot", () => {
   });
 
   test("finds workspace in current directory", async () => {
-    // Create .zulip/db.sqlite3
-    const zulipDir = join(tempDir, ".zulip");
-    await mkdir(zulipDir, { recursive: true });
-    const dbPath = join(zulipDir, "db.sqlite3");
+    // Create .agentlip/db.sqlite3
+    const agentlipDir = join(tempDir, ".agentlip");
+    await mkdir(agentlipDir, { recursive: true });
+    const dbPath = join(agentlipDir, "db.sqlite3");
     await writeFile(dbPath, "");
 
     const result = await discoverWorkspaceRoot(tempDir);
@@ -48,9 +48,9 @@ describe("discoverWorkspaceRoot", () => {
 
   test("finds workspace in parent directory", async () => {
     // Create workspace in tempDir
-    const zulipDir = join(tempDir, ".zulip");
-    await mkdir(zulipDir, { recursive: true });
-    const dbPath = join(zulipDir, "db.sqlite3");
+    const agentlipDir = join(tempDir, ".agentlip");
+    await mkdir(agentlipDir, { recursive: true });
+    const dbPath = join(agentlipDir, "db.sqlite3");
     await writeFile(dbPath, "");
 
     // Create nested subdirectory
@@ -70,9 +70,9 @@ describe("discoverWorkspaceRoot", () => {
     const result = await discoverWorkspaceRoot(tempDir);
     expect(result).toBeNull();
 
-    // Verify no .zulip directory was created
+    // Verify no .agentlip directory was created
     const { existsSync } = await import("node:fs");
-    expect(existsSync(join(tempDir, ".zulip"))).toBe(false);
+    expect(existsSync(join(tempDir, ".agentlip"))).toBe(false);
   });
 });
 
@@ -80,7 +80,7 @@ describe("openWorkspaceDbReadonly", () => {
   let tempDir: string;
 
   beforeEach(async () => {
-    tempDir = await mkdtemp(join(tmpdir(), "agentchat-test-"));
+    tempDir = await mkdtemp(join(tmpdir(), "agentlip-test-"));
   });
 
   afterEach(async () => {
@@ -93,10 +93,10 @@ describe("openWorkspaceDbReadonly", () => {
     ).rejects.toBeInstanceOf(WorkspaceNotFoundError);
   });
 
-  test("throws DatabaseNotFoundError when .zulip exists but db.sqlite3 is missing", async () => {
-    // Create .zulip directory without db.sqlite3
-    const zulipDir = join(tempDir, ".zulip");
-    await mkdir(zulipDir, { recursive: true });
+  test("throws DatabaseNotFoundError when .agentlip exists but db.sqlite3 is missing", async () => {
+    // Create .agentlip directory without db.sqlite3
+    const agentlipDir = join(tempDir, ".agentlip");
+    await mkdir(agentlipDir, { recursive: true });
 
     // discoverWorkspaceRoot will return null because it checks for db.sqlite3
     // So we should get WorkspaceNotFoundError
@@ -107,9 +107,9 @@ describe("openWorkspaceDbReadonly", () => {
 
   test("opens database in read-only mode with query_only=ON", async () => {
     // Create proper workspace with SQLite database
-    const zulipDir = join(tempDir, ".zulip");
-    await mkdir(zulipDir, { recursive: true });
-    const dbPath = join(zulipDir, "db.sqlite3");
+    const agentlipDir = join(tempDir, ".agentlip");
+    await mkdir(agentlipDir, { recursive: true });
+    const dbPath = join(agentlipDir, "db.sqlite3");
 
     // Create an actual SQLite database
     const initDb = new Database(dbPath, { create: true });
@@ -137,9 +137,9 @@ describe("openWorkspaceDbReadonly", () => {
 
   test("read-only database rejects write operations", async () => {
     // Create proper workspace with SQLite database
-    const zulipDir = join(tempDir, ".zulip");
-    await mkdir(zulipDir, { recursive: true });
-    const dbPath = join(zulipDir, "db.sqlite3");
+    const agentlipDir = join(tempDir, ".agentlip");
+    await mkdir(agentlipDir, { recursive: true });
+    const dbPath = join(agentlipDir, "db.sqlite3");
 
     // Create an actual SQLite database
     const initDb = new Database(dbPath, { create: true });
@@ -165,9 +165,9 @@ describe("openWorkspaceDbReadonly", () => {
       openWorkspaceDbReadonly({ workspace: tempDir })
     ).rejects.toThrow();
 
-    // Verify no .zulip directory was created
+    // Verify no .agentlip directory was created
     const { existsSync } = await import("node:fs");
-    expect(existsSync(join(tempDir, ".zulip"))).toBe(false);
+    expect(existsSync(join(tempDir, ".agentlip"))).toBe(false);
   });
 });
 
@@ -176,7 +176,7 @@ describe("isQueryOnly", () => {
   let dbPath: string;
 
   beforeEach(async () => {
-    tempDir = await mkdtemp(join(tmpdir(), "agentchat-test-"));
+    tempDir = await mkdtemp(join(tmpdir(), "agentlip-test-"));
     dbPath = join(tempDir, "test.sqlite3");
   });
 

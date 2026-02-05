@@ -30,7 +30,7 @@ async function verify() {
 
     // Test 2: Valid config loads
     console.log("\n[Test 2] Loading valid config...");
-    const configPath = join(testRoot, "zulip.config.ts");
+    const configPath = join(testRoot, "agentlip.config.ts");
     await writeFile(
       configPath,
       `
@@ -78,7 +78,7 @@ async function verify() {
       `verify-config-evil-${Date.now()}-${Math.random().toString(36).slice(2)}`
     );
     await mkdir(testRoot2, { recursive: true });
-    const evilConfigPath = join(testRoot2, "zulip.config.ts");
+    const evilConfigPath = join(testRoot2, "agentlip.config.ts");
     await writeFile(
       evilConfigPath,
       `

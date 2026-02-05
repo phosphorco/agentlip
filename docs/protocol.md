@@ -1,8 +1,8 @@
-# AgentChat Protocol Documentation
+# Agentlip Protocol Documentation
 
 ## Overview
 
-AgentChat uses a hybrid HTTP REST + WebSocket protocol for real-time communication.
+Agentlip uses a hybrid HTTP REST + WebSocket protocol for real-time communication.
 
 - **Protocol Version**: `v1` (declared in `packages/protocol/src/index.ts`)
 - **Transport**: HTTP for mutations and queries, WebSocket for live event streaming

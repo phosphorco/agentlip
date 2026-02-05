@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * agentchat CLI - stateless read-only queries and hub mutations
+ * agentlip CLI - stateless read-only queries and hub mutations
  * 
  * Commands:
  * - doctor: run diagnostics (DB integrity, schema version, etc.)
@@ -27,7 +27,7 @@ import {
   type Message,
   type TopicAttachment,
   type ListResult,
-} from "@agentchat/kernel";
+} from "@agentlip/kernel";
 import type { Database } from "bun:sqlite";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -1068,11 +1068,11 @@ function printHumanAttachmentAdd(result: AttachmentAddResult): void {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Read server.json from workspace .zulip directory.
+ * Read server.json from workspace .agentlip directory.
  */
 async function readServerJson(workspaceRoot: string): Promise<ServerJsonData | null> {
   try {
-    const serverJsonPath = join(workspaceRoot, ".zulip", "server.json");
+    const serverJsonPath = join(workspaceRoot, ".agentlip", "server.json");
     const content = await readFile(serverJsonPath, "utf-8");
     return JSON.parse(content) as ServerJsonData;
   } catch (err: unknown) {
@@ -1256,7 +1256,7 @@ async function runListen(options: ListenOptions): Promise<void> {
   const startPath = options.workspace ?? process.cwd();
   const discovered = await discoverWorkspaceRoot(startPath);
   if (!discovered) {
-    console.error(`Error: No workspace found (no .zulip/db.sqlite3 in directory tree starting from ${startPath})`);
+    console.error(`Error: No workspace found (no .agentlip/db.sqlite3 in directory tree starting from ${startPath})`);
     process.exit(1);
   }
   const workspaceRoot = discovered.root;
@@ -1264,7 +1264,7 @@ async function runListen(options: ListenOptions): Promise<void> {
   // 2. Read server.json
   const serverJson = await readServerJson(workspaceRoot);
   if (!serverJson) {
-    console.error("Error: Hub not running (server.json not found). Start hub with: agentchatd up");
+    console.error("Error: Hub not running (server.json not found). Start hub with: agentlipd up");
     process.exit(3);
   }
 
@@ -1495,7 +1495,7 @@ async function connectAndStream(
 // ─────────────────────────────────────────────────────────────────────────────
 
 function printHelp(): void {
-  console.log("Usage: agentchat <command> [options]");
+  console.log("Usage: agentlip <command> [options]");
   console.log();
   console.log("Commands:");
   console.log("  doctor               Run diagnostics on workspace DB");
@@ -1516,7 +1516,7 @@ function printHelp(): void {
 }
 
 function printDoctorHelp(): void {
-  console.log("Usage: agentchat doctor [--workspace <path>] [--json]");
+  console.log("Usage: agentlip doctor [--workspace <path>] [--json]");
   console.log();
   console.log("Run diagnostics on workspace database.");
   console.log();
@@ -1531,7 +1531,7 @@ function printDoctorHelp(): void {
 }
 
 function printChannelHelp(): void {
-  console.log("Usage: agentchat channel <subcommand> [options]");
+  console.log("Usage: agentlip channel <subcommand> [options]");
   console.log();
   console.log("Subcommands:");
   console.log("  list    List all channels");
@@ -1543,7 +1543,7 @@ function printChannelHelp(): void {
 }
 
 function printTopicHelp(): void {
-  console.log("Usage: agentchat topic <subcommand> [options]");
+  console.log("Usage: agentlip topic <subcommand> [options]");
   console.log();
   console.log("Subcommands (read-only):");
   console.log("  list      List topics in a channel");
@@ -1552,8 +1552,8 @@ function printTopicHelp(): void {
   console.log("  rename    Rename a topic");
   console.log();
   console.log("Usage:");
-  console.log("  agentchat topic list --channel-id <id> [--limit N] [--offset N]");
-  console.log("  agentchat topic rename <topic_id> --title <new_title>");
+  console.log("  agentlip topic list --channel-id <id> [--limit N] [--offset N]");
+  console.log("  agentlip topic rename <topic_id> --title <new_title>");
   console.log();
   console.log("Options:");
   console.log("  --channel-id <id>   Channel ID (required for list)");
@@ -1566,7 +1566,7 @@ function printTopicHelp(): void {
 }
 
 function printMsgHelp(): void {
-  console.log("Usage: agentchat msg <subcommand> [options]");
+  console.log("Usage: agentlip msg <subcommand> [options]");
   console.log();
   console.log("Subcommands (read-only):");
   console.log("  tail      Get latest messages from a topic");
@@ -1579,14 +1579,14 @@ function printMsgHelp(): void {
   console.log("  retopic   Move message(s) to different topic");
   console.log();
   console.log("Read-only usage:");
-  console.log("  agentchat msg tail --topic-id <id> [--limit N]");
-  console.log("  agentchat msg page --topic-id <id> [--before-id <id>] [--after-id <id>] [--limit N]");
+  console.log("  agentlip msg tail --topic-id <id> [--limit N]");
+  console.log("  agentlip msg page --topic-id <id> [--before-id <id>] [--after-id <id>] [--limit N]");
   console.log();
   console.log("Mutation usage:");
-  console.log("  agentchat msg send --topic-id <id> --sender <name> [--content <text>] [--stdin]");
-  console.log("  agentchat msg edit <message_id> --content <text> [--expected-version <n>]");
-  console.log("  agentchat msg delete <message_id> --actor <name> [--expected-version <n>]");
-  console.log("  agentchat msg retopic <message_id> --to-topic-id <id> --mode <one|later|all> [--force]");
+  console.log("  agentlip msg send --topic-id <id> --sender <name> [--content <text>] [--stdin]");
+  console.log("  agentlip msg edit <message_id> --content <text> [--expected-version <n>]");
+  console.log("  agentlip msg delete <message_id> --actor <name> [--expected-version <n>]");
+  console.log("  agentlip msg retopic <message_id> --to-topic-id <id> --mode <one|later|all> [--force]");
   console.log();
   console.log("Options:");
   console.log("  --topic-id <id>       Topic ID (required for tail/page/send)");
@@ -1614,7 +1614,7 @@ function printMsgHelp(): void {
 }
 
 function printAttachmentHelp(): void {
-  console.log("Usage: agentchat attachment <subcommand> [options]");
+  console.log("Usage: agentlip attachment <subcommand> [options]");
   console.log();
   console.log("Subcommands (read-only):");
   console.log("  list    List attachments for a topic");
@@ -1623,8 +1623,8 @@ function printAttachmentHelp(): void {
   console.log("  add     Add an attachment to a topic");
   console.log();
   console.log("Usage:");
-  console.log("  agentchat attachment list --topic-id <id> [--kind <kind>]");
-  console.log("  agentchat attachment add --topic-id <id> --kind <kind> --value-json <json>");
+  console.log("  agentlip attachment list --topic-id <id> [--kind <kind>]");
+  console.log("  agentlip attachment add --topic-id <id> --kind <kind> --value-json <json>");
   console.log("      [--key <key>] [--source-message-id <id>] [--dedupe-key <key>]");
   console.log();
   console.log("Options:");
@@ -1640,7 +1640,7 @@ function printAttachmentHelp(): void {
 }
 
 function printSearchHelp(): void {
-  console.log("Usage: agentchat search --query <text> [--limit N] [--workspace <path>] [--json]");
+  console.log("Usage: agentlip search --query <text> [--limit N] [--workspace <path>] [--json]");
   console.log();
   console.log("Full-text search messages (requires FTS to be enabled).");
   console.log();
@@ -1657,7 +1657,7 @@ function printSearchHelp(): void {
 }
 
 function printListenHelp(): void {
-  console.log("Usage: agentchat listen [--since <event_id>] [--channel <name|id>...] [--topic-id <id>...] [--workspace <path>]");
+  console.log("Usage: agentlip listen [--since <event_id>] [--channel <name|id>...] [--topic-id <id>...] [--workspace <path>]");
   console.log();
   console.log("Stream events from hub via WebSocket (JSONL output to stdout).");
   console.log();

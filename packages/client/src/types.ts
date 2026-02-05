@@ -1,5 +1,5 @@
 /**
- * Shared WebSocket protocol types for AgentChat client SDK
+ * Shared WebSocket protocol types for Agentlip client SDK
  * 
  * These types match the hub's wsEndpoint.ts implementation
  * and are used by both client SDK and CLI.

@@ -1,19 +1,19 @@
 {
-  "name": "@agentchat/hub",
+  "name": "@agentlip/hub",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./agentchatd": "./src/agentchatd.ts",
+    "./agentlipd": "./src/agentlipd.ts",
     "./test-harness": "./src/integrationHarness.ts"
   },
   "bin": {
-    "agentchatd": "./src/agentchatd.ts"
+    "agentlipd": "./src/agentlipd.ts"
   },
   "dependencies": {
-    "@agentchat/protocol": "workspace:*",
-    "@agentchat/workspace": "workspace:*",
-    "@agentchat/kernel": "workspace:*"
+    "@agentlip/protocol": "workspace:*",
+    "@agentlip/workspace": "workspace:*",
+    "@agentlip/kernel": "workspace:*"
   }
 }

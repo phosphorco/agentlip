@@ -2,9 +2,9 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type { Server } from "bun";
-import type { HealthResponse } from "@agentchat/protocol";
-import { PROTOCOL_VERSION } from "@agentchat/protocol";
-import { openDb, runMigrations } from "@agentchat/kernel";
+import type { HealthResponse } from "@agentlip/protocol";
+import { PROTOCOL_VERSION } from "@agentlip/protocol";
+import { openDb, runMigrations } from "@agentlip/kernel";
 import { requireAuth, requireWsToken } from "./authMiddleware";
 import { handleApiV1, type ApiV1Context } from "./apiV1";
 import { createWsHub, createWsHandlers } from "./wsEndpoint";
@@ -47,7 +47,7 @@ function isTestEnvironment(): boolean {
     // Bun test: entry point is a .test. or _test. file
     (process.argv[1]?.match(/[._]test\.[jt]sx?$/) !== null) ||
     // CI test runners often set this
-    process.env.CI === "true" && process.env.AGENTCHAT_LOG_LEVEL === undefined;
+    process.env.CI === "true" && process.env.AGENTLIP_LOG_LEVEL === undefined;
   
   return _isTestEnvCached;
 }
@@ -184,14 +184,14 @@ export interface StartHubOptions {
   /** 
    * Workspace root directory (enables daemon mode).
    * When provided, hub will:
-   * - Acquire writer lock (.zulip/locks/writer.lock)
-   * - Write server.json (.zulip/server.json with mode 0600)
+   * - Acquire writer lock (.agentlip/locks/writer.lock)
+   * - Write server.json (.agentlip/server.json with mode 0600)
    * - Clean up on shutdown (remove lock + server.json)
    */
   workspaceRoot?: string;
   /** Directory containing SQL migrations (defaults to repo migrations/). */
   migrationsDir?: string;
-  /** Enable optional FTS5 migration (opportunistic, non-fatal). If undefined, uses AGENTCHAT_ENABLE_FTS env var (1=enabled, 0=disabled). Default: false. */
+  /** Enable optional FTS5 migration (opportunistic, non-fatal). If undefined, uses AGENTLIP_ENABLE_FTS env var (1=enabled, 0=disabled). Default: false. */
   enableFts?: boolean;
   allowUnsafeNetwork?: boolean;
   /** Auth token for mutation endpoints + WS. If not provided, mutations are rejected. */
@@ -265,7 +265,7 @@ export function assertLocalhostBind(
  * 
  * Precedence:
  * 1. Explicit enableFts parameter (if provided)
- * 2. AGENTCHAT_ENABLE_FTS env var (1=enabled, 0=disabled)
+ * 2. AGENTLIP_ENABLE_FTS env var (1=enabled, 0=disabled)
  * 3. Default: false
  */
 function resolveFtsEnabled(enableFts?: boolean): boolean {
@@ -273,7 +273,7 @@ function resolveFtsEnabled(enableFts?: boolean): boolean {
     return enableFts;
   }
   
-  const envValue = process.env.AGENTCHAT_ENABLE_FTS;
+  const envValue = process.env.AGENTLIP_ENABLE_FTS;
   if (envValue === "1") return true;
   if (envValue === "0") return false;
   
@@ -281,15 +281,15 @@ function resolveFtsEnabled(enableFts?: boolean): boolean {
 }
 
 /**
- * Start the AgentChat hub HTTP server.
+ * Start the Agentlip hub HTTP server.
  * 
  * Implements:
  * - GET /health endpoint (unauthenticated, always returns 200 when responsive)
  * - Localhost-only bind validation by default
- * - FTS configuration via options or AGENTCHAT_ENABLE_FTS env var
+ * - FTS configuration via options or AGENTLIP_ENABLE_FTS env var
  * - Workspace-aware daemon mode (when workspaceRoot provided):
- *   - Acquires writer lock (.zulip/locks/writer.lock)
- *   - Writes server.json (.zulip/server.json with mode 0600)
+ *   - Acquires writer lock (.agentlip/locks/writer.lock)
+ *   - Writes server.json (.agentlip/server.json with mode 0600)
  *   - Graceful shutdown removes lock + server.json
  * 
  * @param options Configuration options
@@ -355,7 +355,7 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
     }
   }
 
-  // Load workspace config (zulip.config.ts) in daemon mode (optional file)
+  // Load workspace config (agentlip.config.ts) in daemon mode (optional file)
   let workspaceConfig: WorkspaceConfig | null = null;
   if (daemonMode && workspaceRoot) {
     try {

@@ -34,4 +34,4 @@ jobs:
       - name: Run tests (FTS=${{ matrix.fts_enabled }})
         run: bun test
         env:
-          AGENTCHAT_ENABLE_FTS: ${{ matrix.fts_enabled && '1' || '0' }}
+          AGENTLIP_ENABLE_FTS: ${{ matrix.fts_enabled && '1' || '0' }}

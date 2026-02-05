@@ -24,7 +24,7 @@ const TEST_TOKEN = "test_edge_auth_token_abc123";
 async function createTempWorkspace(): Promise<string> {
   const timestamp = Date.now();
   const random = Math.random().toString(36).slice(2);
-  const workspace = join(tmpdir(), `agentchat-edge-test-${timestamp}-${random}`);
+  const workspace = join(tmpdir(), `agentlip-edge-test-${timestamp}-${random}`);
   await mkdir(workspace, { recursive: true });
   return workspace;
 }
@@ -59,8 +59,8 @@ describe("Operational Edge Cases", () => {
     // Clean up temp workspaces (restore perms first)
     for (const workspace of tempWorkspaces) {
       try {
-        const zulipDir = join(workspace, ".zulip");
-        const locksDir = join(zulipDir, "locks");
+        const agentlipDir = join(workspace, ".agentlip");
+        const locksDir = join(agentlipDir, "locks");
         
         // Restore writability to allow cleanup
         try {
@@ -70,7 +70,7 @@ describe("Operational Edge Cases", () => {
         }
         
         try {
-          await makeDirectoryWritable(zulipDir);
+          await makeDirectoryWritable(agentlipDir);
         } catch {
           // May not exist
         }
@@ -145,13 +145,13 @@ describe("Operational Edge Cases", () => {
   });
 
   describe("server.json permission errors (daemon mode)", () => {
-    it("fails when .zulip directory is read-only", async () => {
+    it("fails when .agentlip directory is read-only", async () => {
       const workspace = await createTempWorkspace();
       tempWorkspaces.push(workspace);
 
-      const zulipDir = join(workspace, ".zulip");
-      await mkdir(zulipDir, { recursive: true });
-      await makeDirectoryReadOnly(zulipDir);
+      const agentlipDir = join(workspace, ".agentlip");
+      await mkdir(agentlipDir, { recursive: true });
+      await makeDirectoryReadOnly(agentlipDir);
 
       let error: Error | null = null;
       try {
@@ -172,7 +172,7 @@ describe("Operational Edge Cases", () => {
       // SKIPPED: serverJson.ts uses atomic write (temp file + rename),
       // which can overwrite read-only target on many filesystems.
       // This behavior is platform-specific and not reliably testable.
-      // The important case (.zulip dir read-only) is tested above.
+      // The important case (.agentlip dir read-only) is tested above.
     });
 
     it("succeeds when server.json is writable", async () => {
@@ -191,7 +191,7 @@ describe("Operational Edge Cases", () => {
       expect(serverJson?.instance_id).toBe(hub.instanceId);
       expect(serverJson?.auth_token).toBe(TEST_TOKEN);
 
-      const serverJsonPath = join(workspace, ".zulip", "server.json");
+      const serverJsonPath = join(workspace, ".agentlip", "server.json");
       const stats = await stat(serverJsonPath);
       const mode = stats.mode & 0o777;
       expect(mode).toBe(0o600);
@@ -236,7 +236,7 @@ describe("Operational Edge Cases", () => {
       tempWorkspaces.push(workspace);
 
       // Manually create stale lock + stale server.json (invalid port)
-      const locksDir = join(workspace, ".zulip", "locks");
+      const locksDir = join(workspace, ".agentlip", "locks");
       await mkdir(locksDir, { recursive: true });
 
       const lockPath = join(locksDir, "writer.lock");
@@ -320,13 +320,13 @@ describe("Operational Edge Cases", () => {
       expect(error?.message).toMatch(/EACCES|EPERM|permission denied/i);
     });
 
-    it("fails when .zulip/locks directory cannot be created", async () => {
+    it("fails when .agentlip/locks directory cannot be created", async () => {
       const workspace = await createTempWorkspace();
       tempWorkspaces.push(workspace);
 
-      const zulipDir = join(workspace, ".zulip");
-      await mkdir(zulipDir, { recursive: true });
-      await makeDirectoryReadOnly(zulipDir);
+      const agentlipDir = join(workspace, ".agentlip");
+      await mkdir(agentlipDir, { recursive: true });
+      await makeDirectoryReadOnly(agentlipDir);
 
       let error: Error | null = null;
       try {
@@ -354,11 +354,11 @@ describe("Operational Edge Cases", () => {
       hubs.push(hub);
 
       // Verify directories created successfully
-      const zulipDir = join(workspace, ".zulip");
-      const locksDir = join(zulipDir, "locks");
+      const agentlipDir = join(workspace, ".agentlip");
+      const locksDir = join(agentlipDir, "locks");
 
-      const zulipStats = await stat(zulipDir);
-      expect(zulipStats.isDirectory()).toBe(true);
+      const agentlipStats = await stat(agentlipDir);
+      expect(agentlipStats.isDirectory()).toBe(true);
 
       const locksStats = await stat(locksDir);
       expect(locksStats.isDirectory()).toBe(true);
@@ -371,7 +371,7 @@ describe("Operational Edge Cases", () => {
       tempWorkspaces.push(workspace);
 
       // Create lock without server.json
-      const locksDir = join(workspace, ".zulip", "locks");
+      const locksDir = join(workspace, ".agentlip", "locks");
       await mkdir(locksDir, { recursive: true });
 
       const lockPath = join(locksDir, "writer.lock");
@@ -394,7 +394,7 @@ describe("Operational Edge Cases", () => {
       tempWorkspaces.push(workspace);
 
       // Create lock + server.json with unreachable endpoint
-      const locksDir = join(workspace, ".zulip", "locks");
+      const locksDir = join(workspace, ".agentlip", "locks");
       await mkdir(locksDir, { recursive: true });
 
       await writeFile(
@@ -454,7 +454,7 @@ describe("Operational Edge Cases", () => {
       tempWorkspaces.push(workspace);
 
       // Create stale lock
-      const locksDir = join(workspace, ".zulip", "locks");
+      const locksDir = join(workspace, ".agentlip", "locks");
       await mkdir(locksDir, { recursive: true });
       await writeFile(join(locksDir, "writer.lock"), "stale\n");
 
@@ -477,7 +477,7 @@ describe("Operational Edge Cases", () => {
       tempWorkspaces.push(workspace);
 
       // Create lock + valid server.json so health check has something to validate
-      const locksDir = join(workspace, ".zulip", "locks");
+      const locksDir = join(workspace, ".agentlip", "locks");
       await mkdir(locksDir, { recursive: true });
       await writeFile(join(locksDir, "writer.lock"), "live\n");
 

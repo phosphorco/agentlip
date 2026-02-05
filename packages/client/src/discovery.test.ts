@@ -1,7 +1,7 @@
 /**
  * Tests for workspace discovery re-exports
  * 
- * Validates that @agentchat/client correctly re-exports workspace helpers.
+ * Validates that @agentlip/client correctly re-exports workspace helpers.
  */
 
 import { describe, test, expect } from "bun:test";
@@ -24,7 +24,7 @@ describe("discovery re-exports", () => {
   });
 
   test("can initialize workspace", async () => {
-    const tempDir = join(tmpdir(), `agentchat-test-${Date.now()}`);
+    const tempDir = join(tmpdir(), `agentlip-test-${Date.now()}`);
     await fs.mkdir(tempDir, { recursive: true });
 
     try {
@@ -32,7 +32,7 @@ describe("discovery re-exports", () => {
       
       expect(result.root).toBe(tempDir);
       expect(result.created).toBe(true);
-      expect(result.dbPath).toBe(join(tempDir, ".zulip", "db.sqlite3"));
+      expect(result.dbPath).toBe(join(tempDir, ".agentlip", "db.sqlite3"));
 
       // Verify workspace was actually created
       const dbExists = await fs.access(result.dbPath).then(() => true).catch(() => false);
@@ -43,7 +43,7 @@ describe("discovery re-exports", () => {
   });
 
   test("can discover initialized workspace", async () => {
-    const tempDir = join(tmpdir(), `agentchat-test-${Date.now()}`);
+    const tempDir = join(tmpdir(), `agentlip-test-${Date.now()}`);
     await fs.mkdir(tempDir, { recursive: true });
 
     try {

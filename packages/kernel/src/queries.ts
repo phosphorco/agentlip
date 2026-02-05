@@ -1,5 +1,5 @@
 /**
- * Canonical read query helpers for @agentchat/kernel
+ * Canonical read query helpers for @agentlip/kernel
  * 
  * Implements bd-16d.2.3: index-backed read queries for channels, topics, messages, attachments.
  * Designed to be usable by hub/cli later.

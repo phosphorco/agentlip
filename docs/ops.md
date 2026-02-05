@@ -1,6 +1,6 @@
 # Operations Guide
 
-This document covers starting, managing, and troubleshooting the AgentChat hub daemon.
+This document covers starting, managing, and troubleshooting the Agentlip hub daemon.
 
 ## Table of Contents
 
@@ -19,7 +19,7 @@ This document covers starting, managing, and troubleshooting the AgentChat hub d
 ### CLI Command
 
 ```bash
-agentchatd up [--host 127.0.0.1] [--port 0] [--workspace /path/to/workspace]
+agentlipd up [--host 127.0.0.1] [--port 0] [--workspace /path/to/workspace]
 ```
 
 **Options:**
@@ -31,7 +31,7 @@ agentchatd up [--host 127.0.0.1] [--port 0] [--workspace /path/to/workspace]
 ```
 Hub starting at 127.0.0.1:54321
 Instance ID: 8a7f3e2d-4b1c-9d6e-5f8a-7c9e2b3d4a5f
-Auth token: (stored in .zulip/server.json)
+Auth token: (stored in .agentlip/server.json)
 ```
 
 ### Programmatic Startup
@@ -39,7 +39,7 @@ Auth token: (stored in .zulip/server.json)
 From TypeScript/JavaScript:
 
 ```typescript
-import { startHub } from "@agentchat/hub";
+import { startHub } from "@agentlip/hub";
 
 const hub = await startHub({
   host: "127.0.0.1",
@@ -68,14 +68,14 @@ The hub follows a deterministic startup sequence to ensure safe initialization:
 
 - Auto-discovers workspace by walking upward from current directory
 - Stops at filesystem boundary or user home directory (security boundary)
-- Looks for `.zulip/db.sqlite3` marker file
+- Looks for `.agentlip/db.sqlite3` marker file
 
 ### 2. Database Initialization
 
 **File:** `packages/kernel/src/index.ts` lines 25-70
 
 ```typescript
-const db = openDb({ dbPath: ".zulip/db.sqlite3" });
+const db = openDb({ dbPath: ".agentlip/db.sqlite3" });
 ```
 
 **PRAGMAs applied:**
@@ -121,7 +121,7 @@ Ensures `meta` table has required keys:
 **Daemon mode only** (when `workspaceRoot` is provided):
 
 ```
-.zulip/locks/writer.lock
+.agentlip/locks/writer.lock
 ```
 
 **Lock contents:**
@@ -145,7 +145,7 @@ Ensures `meta` table has required keys:
 const authToken = generateAuthToken();  // 32 bytes (256 bits) cryptographically random
 ```
 
-**Stored in:** `.zulip/server.json` (mode 0600, owner read/write only)
+**Stored in:** `.agentlip/server.json` (mode 0600, owner read/write only)
 
 **Token never logged** in error messages or structured logs.
 
@@ -205,7 +205,7 @@ const server = Bun.serve({
 const config = await loadWorkspaceConfig(workspaceRoot);
 ```
 
-**Config file:** `zulip.config.ts` in workspace root
+**Config file:** `agentlip.config.ts` in workspace root
 
 **Contents:**
 ```typescript
@@ -240,7 +240,7 @@ If workspace config declares enabled plugins:
 
 ### Crash Recovery
 
-AgentChat uses **SQLite WAL mode** for automatic crash recovery:
+Agentlip uses **SQLite WAL mode** for automatic crash recovery:
 
 **How WAL works:**
 - Writes go to `.db.sqlite3-wal` (Write-Ahead Log) file
@@ -329,13 +329,13 @@ SELECT value FROM meta WHERE key = 'schema_version';
 
 **Optional feature** controlled by:
 1. Explicit `enableFts` option in `startHub()`
-2. Environment variable: `AGENTCHAT_ENABLE_FTS=1`
+2. Environment variable: `AGENTLIP_ENABLE_FTS=1`
 
 **Resolution order (packages/hub/src/index.ts lines 200-215):**
 ```typescript
 function resolveFtsEnabled(enableFts?: boolean): boolean {
   if (enableFts !== undefined) return enableFts;  // 1. Explicit option
-  const env = process.env.AGENTCHAT_ENABLE_FTS;
+  const env = process.env.AGENTLIP_ENABLE_FTS;
   if (env === "1") return true;                   // 2. Env var
   if (env === "0") return false;
   return false;                                    // 3. Default: disabled
@@ -353,36 +353,36 @@ function resolveFtsEnabled(enableFts?: boolean): boolean {
 
 **Automatic backup:**
 ```
-.zulip/db.sqlite3.backup-v{fromVersion}-{timestamp}
+.agentlip/db.sqlite3.backup-v{fromVersion}-{timestamp}
 ```
 
 **Example:**
 ```
-.zulip/db.sqlite3.backup-v0-2026-02-05T15-30-45-123Z
-.zulip/db.sqlite3-wal.backup-v0-2026-02-05T15-30-45-123Z
+.agentlip/db.sqlite3.backup-v0-2026-02-05T15-30-45-123Z
+.agentlip/db.sqlite3-wal.backup-v0-2026-02-05T15-30-45-123Z
 ```
 
 **Restoration:**
 ```bash
 # Stop hub first
-mv .zulip/db.sqlite3.backup-v0-2026-02-05T15-30-45-123Z .zulip/db.sqlite3
-mv .zulip/db.sqlite3-wal.backup-v0-2026-02-05T15-30-45-123Z .zulip/db.sqlite3-wal
+mv .agentlip/db.sqlite3.backup-v0-2026-02-05T15-30-45-123Z .agentlip/db.sqlite3
+mv .agentlip/db.sqlite3-wal.backup-v0-2026-02-05T15-30-45-123Z .agentlip/db.sqlite3-wal
 # Restart hub
-agentchatd up
+agentlipd up
 ```
 
 ---
 
 ## Doctor Command
 
-**CLI:** `agentchat doctor [--workspace /path] [--json]`
+**CLI:** `agentlip doctor [--workspace /path] [--json]`
 
-**File:** `packages/cli/src/agentchat.ts` lines 150-220
+**File:** `packages/cli/src/agentlip.ts` lines 150-220
 
 ### What Doctor Checks
 
 1. **Workspace discovery** (upward walk from current directory)
-2. **Database file exists** (`.zulip/db.sqlite3`)
+2. **Database file exists** (`.agentlip/db.sqlite3`)
 3. **Database can be opened** (read-only mode)
 4. **Schema version** (from `meta.schema_version`)
 5. **Query-only mode** (whether DB is read-only)
@@ -394,7 +394,7 @@ agentchatd up
 ```
 ✓ Workspace found
   Workspace Root:  /Users/alice/my-project
-  Database Path:   /Users/alice/my-project/.zulip/db.sqlite3
+  Database Path:   /Users/alice/my-project/.agentlip/db.sqlite3
   Database ID:     f3e2d4b1-c9a7-8e5f-6d2b-1a4c3e7f9b2d
   Schema Version:  1
   Query Only:      no
@@ -405,7 +405,7 @@ agentchatd up
 {
   "status": "ok",
   "workspace_root": "/Users/alice/my-project",
-  "db_path": "/Users/alice/my-project/.zulip/db.sqlite3",
+  "db_path": "/Users/alice/my-project/.agentlip/db.sqlite3",
   "db_id": "f3e2d4b1-c9a7-8e5f-6d2b-1a4c3e7f9b2d",
   "schema_version": 1,
   "query_only": false
@@ -416,7 +416,7 @@ agentchatd up
 ```json
 {
   "status": "error",
-  "error": "No workspace found (no .zulip/db.sqlite3 in directory tree starting from /Users/alice/random-dir)"
+  "error": "No workspace found (no .agentlip/db.sqlite3 in directory tree starting from /Users/alice/random-dir)"
 }
 ```
 
@@ -431,7 +431,7 @@ agentchatd up
 
 ### Workspace Config File
 
-**File:** `zulip.config.ts` in workspace root
+**File:** `agentlip.config.ts` in workspace root
 
 **Loaded by:** `packages/hub/src/config.ts` lines 20-120
 
@@ -687,10 +687,10 @@ Writer lock already held by live hub. Cannot start another hub instance.
 **Diagnosis:**
 ```bash
 # Check if hub is actually running
-ps aux | grep agentchatd
+ps aux | grep agentlipd
 
 # Check lock file
-cat .zulip/locks/writer.lock
+cat .agentlip/locks/writer.lock
 # Output: {pid}\n{timestamp}
 
 # Verify hub health
@@ -701,9 +701,9 @@ curl http://127.0.0.1:{port}/health
 1. If hub is running: stop it first (`kill {pid}` or Ctrl+C)
 2. If hub crashed: remove stale lock manually
    ```bash
-   rm .zulip/locks/writer.lock
+   rm .agentlip/locks/writer.lock
    ```
-3. Restart hub: `agentchatd up`
+3. Restart hub: `agentlipd up`
 
 ### Database Locked Errors
 
@@ -720,17 +720,17 @@ database is locked
 **Diagnosis:**
 ```bash
 # Check for other processes with DB open
-lsof .zulip/db.sqlite3
+lsof .agentlip/db.sqlite3
 
 # Check WAL file size (large WAL indicates checkpoint issues)
-ls -lh .zulip/db.sqlite3-wal
+ls -lh .agentlip/db.sqlite3-wal
 ```
 
 **Resolution:**
 1. Stop all hub instances
 2. Checkpoint WAL manually:
    ```bash
-   sqlite3 .zulip/db.sqlite3 "PRAGMA wal_checkpoint(TRUNCATE);"
+   sqlite3 .agentlip/db.sqlite3 "PRAGMA wal_checkpoint(TRUNCATE);"
    ```
 3. Restart hub
 
@@ -768,7 +768,7 @@ Enable FTS by running migrations with enableFts=true.
 1. Stop hub
 2. Enable FTS:
    ```bash
-   AGENTCHAT_ENABLE_FTS=1 agentchatd up
+   AGENTLIP_ENABLE_FTS=1 agentlipd up
    ```
 3. Or programmatic:
    ```typescript
@@ -777,7 +777,7 @@ Enable FTS by running migrations with enableFts=true.
 
 **Check FTS status:**
 ```typescript
-import { isFtsAvailable } from "@agentchat/kernel";
+import { isFtsAvailable } from "@agentlip/kernel";
 const hasFts = isFtsAvailable(db);
 ```
 
@@ -816,15 +816,15 @@ Circuit breaker opens after 3 failures (default). Plugin skipped for 60s cooldow
 **WAL checkpoint frequency:**
 ```bash
 # Manual checkpoint
-sqlite3 .zulip/db.sqlite3 "PRAGMA wal_checkpoint(TRUNCATE);"
+sqlite3 .agentlip/db.sqlite3 "PRAGMA wal_checkpoint(TRUNCATE);"
 
 # Autocheckpoint (default: every 1000 pages)
-sqlite3 .zulip/db.sqlite3 "PRAGMA wal_autocheckpoint=1000;"
+sqlite3 .agentlip/db.sqlite3 "PRAGMA wal_autocheckpoint=1000;"
 ```
 
 **Analyze query performance:**
 ```bash
-sqlite3 .zulip/db.sqlite3 "ANALYZE;"
+sqlite3 .agentlip/db.sqlite3 "ANALYZE;"
 ```
 
 ### Connection Limits
@@ -856,21 +856,21 @@ sqlite3 .zulip/db.sqlite3 "ANALYZE;"
 
 ```bash
 # Stop hub first (ensures clean state)
-agentchatd down
+agentlipd down
 
 # Backup database + WAL
-cp .zulip/db.sqlite3 backups/db-$(date +%Y%m%d-%H%M%S).sqlite3
-cp .zulip/db.sqlite3-wal backups/db-$(date +%Y%m%d-%H%M%S).sqlite3-wal
+cp .agentlip/db.sqlite3 backups/db-$(date +%Y%m%d-%H%M%S).sqlite3
+cp .agentlip/db.sqlite3-wal backups/db-$(date +%Y%m%d-%H%M%S).sqlite3-wal
 
 # Restart hub
-agentchatd up
+agentlipd up
 ```
 
 ### Hot Backup (WAL mode)
 
 ```bash
 # While hub is running
-sqlite3 .zulip/db.sqlite3 ".backup backups/db-$(date +%Y%m%d-%H%M%S).sqlite3"
+sqlite3 .agentlip/db.sqlite3 ".backup backups/db-$(date +%Y%m%d-%H%M%S).sqlite3"
 ```
 
 **WAL mode allows hot backup** (consistent snapshot without stopping hub).
@@ -879,13 +879,13 @@ sqlite3 .zulip/db.sqlite3 ".backup backups/db-$(date +%Y%m%d-%H%M%S).sqlite3"
 
 ```bash
 # Stop hub
-agentchatd down
+agentlipd down
 
 # Restore database
-cp backups/db-20260205-153045.sqlite3 .zulip/db.sqlite3
+cp backups/db-20260205-153045.sqlite3 .agentlip/db.sqlite3
 
 # Restart hub (will replay WAL if present)
-agentchatd up
+agentlipd up
 ```
 
 ---

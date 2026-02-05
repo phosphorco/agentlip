@@ -32,7 +32,7 @@ describe("startHub", () => {
   async function createTempWorkspace(): Promise<string> {
     const timestamp = Date.now();
     const random = Math.random().toString(36).slice(2);
-    const workspace = join(tmpdir(), `agentchat-test-${timestamp}-${random}`);
+    const workspace = join(tmpdir(), `agentlip-test-${timestamp}-${random}`);
     await mkdir(workspace, { recursive: true });
     tempWorkspaces.push(workspace);
     return workspace;
@@ -289,7 +289,7 @@ describe("startHub", () => {
   describe("graceful shutdown (workspace daemon mode)", () => {
     it("writes server.json with mode 0600 when workspaceRoot provided", async () => {
       const workspace = await createTempWorkspace();
-      const dbPath = join(workspace, ".zulip", "db.sqlite3");
+      const dbPath = join(workspace, ".agentlip", "db.sqlite3");
 
       hub = await startHub({
         workspaceRoot: workspace,
@@ -307,7 +307,7 @@ describe("startHub", () => {
       expect(serverJson!.pid).toBe(process.pid);
 
       // Verify mode 0600 (owner read/write only)
-      const serverJsonPath = join(workspace, ".zulip", "server.json");
+      const serverJsonPath = join(workspace, ".agentlip", "server.json");
       const stats = await stat(serverJsonPath);
       const mode = stats.mode & 0o777;
       expect(mode).toBe(0o600);
@@ -320,7 +320,7 @@ describe("startHub", () => {
 
     it("stop() removes server.json and releases writer lock", async () => {
       const workspace = await createTempWorkspace();
-      const dbPath = join(workspace, ".zulip", "db.sqlite3");
+      const dbPath = join(workspace, ".agentlip", "db.sqlite3");
 
       hub = await startHub({
         workspaceRoot: workspace,
@@ -349,7 +349,7 @@ describe("startHub", () => {
 
     it("stop() does not hang even after WS connection", async () => {
       const workspace = await createTempWorkspace();
-      const dbPath = join(workspace, ".zulip", "db.sqlite3");
+      const dbPath = join(workspace, ".agentlip", "db.sqlite3");
 
       hub = await startHub({
         workspaceRoot: workspace,
@@ -388,7 +388,7 @@ describe("startHub", () => {
 
     it("generates auth token if not provided in daemon mode", async () => {
       const workspace = await createTempWorkspace();
-      const dbPath = join(workspace, ".zulip", "db.sqlite3");
+      const dbPath = join(workspace, ".agentlip", "db.sqlite3");
 
       hub = await startHub({
         workspaceRoot: workspace,
@@ -412,7 +412,7 @@ describe("startHub", () => {
 
     it("rejects new requests during graceful shutdown", async () => {
       const workspace = await createTempWorkspace();
-      const dbPath = join(workspace, ".zulip", "db.sqlite3");
+      const dbPath = join(workspace, ".agentlip", "db.sqlite3");
 
       hub = await startHub({
         workspaceRoot: workspace,

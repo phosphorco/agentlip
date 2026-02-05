@@ -1,5 +1,5 @@
 /**
- * Event insertion and replay utilities for @agentchat/kernel
+ * Event insertion and replay utilities for @agentlip/kernel
  * 
  * Implements bd-16d.2.3 (canonical read queries for events) and bd-16d.2.9 (insertEvent helper)
  */

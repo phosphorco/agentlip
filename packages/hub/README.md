@@ -1,6 +1,6 @@
-# @agentchat/hub
+# @agentlip/hub
 
-Bun-based HTTP + WebSocket hub daemon for AgentChat local coordination.
+Bun-based HTTP + WebSocket hub daemon for Agentlip local coordination.
 
 ## Features
 
@@ -14,10 +14,10 @@ Bun-based HTTP + WebSocket hub daemon for AgentChat local coordination.
 
 ### `startHub(options?)`
 
-Start the AgentChat hub HTTP server.
+Start the Agentlip hub HTTP server.
 
 ```typescript
-import { startHub } from "@agentchat/hub";
+import { startHub } from "@agentlip/hub";
 
 const hub = await startHub({
   host: "127.0.0.1",    // Default: 127.0.0.1
@@ -39,7 +39,7 @@ await hub.stop();
 Validates that a bind host is localhost-only.
 
 ```typescript
-import { assertLocalhostBind } from "@agentchat/hub";
+import { assertLocalhostBind } from "@agentlip/hub";
 
 // These pass:
 assertLocalhostBind("127.0.0.1");

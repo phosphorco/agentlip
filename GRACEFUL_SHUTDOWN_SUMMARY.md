@@ -9,7 +9,7 @@
 
 Added `workspaceRoot` option to `StartHubOptions` that enables daemon mode:
 
-- **Lock Acquisition:** Acquires writer lock (`.zulip/locks/writer.lock`) before starting server
+- **Lock Acquisition:** Acquires writer lock (`.agentlip/locks/writer.lock`) before starting server
   - Uses health check function that calls `/health` endpoint to verify if existing hub is alive
   - Validates `instance_id` matches to detect stale locks
   - Throws error if live hub already running

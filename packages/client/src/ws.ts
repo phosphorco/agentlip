@@ -1,5 +1,5 @@
 /**
- * WebSocket client with replay and reconnect for AgentChat Hub
+ * WebSocket client with replay and reconnect for Agentlip Hub
  * 
  * Implements automatic reconnection with exponential backoff and event deduplication.
  * 
@@ -61,7 +61,7 @@ interface PendingEvent {
 }
 
 /**
- * Connect to AgentChat Hub WebSocket with automatic reconnection.
+ * Connect to Agentlip Hub WebSocket with automatic reconnection.
  * 
  * Features:
  * - Automatic reconnect with exponential backoff

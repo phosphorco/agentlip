@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Verification script for agentchatd status command.
+ * Verification script for agentlipd status command.
  *
  * Tests:
  * 1. status=not_running when server.json missing
@@ -16,7 +16,7 @@ import {
   removeServerJson,
   readServerJson,
 } from "./src/serverJson.js";
-import { checkStatus } from "./src/agentchatd.js";
+import { checkStatus } from "./src/agentlipd.js";
 import { discoverOrInitWorkspace } from "../workspace/src/index.js";
 import { openDb, runMigrations } from "../kernel/src/index.js";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -37,10 +37,10 @@ function assert(condition: boolean, message: string) {
 }
 
 async function test() {
-  console.log("=== AgentChat Status Command Verification ===\n");
+  console.log("=== Agentlip Status Command Verification ===\n");
 
   // Create temporary workspace
-  const tmpRoot = await mkdtemp(join(tmpdir(), "agentchat-test-"));
+  const tmpRoot = await mkdtemp(join(tmpdir(), "agentlip-test-"));
   console.log(`Test workspace: ${tmpRoot}\n`);
 
   try {

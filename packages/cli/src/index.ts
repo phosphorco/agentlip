@@ -1,24 +1,24 @@
 /**
- * @agentchat/cli - CLI utilities for AgentChat
+ * @agentlip/cli - CLI utilities for Agentlip
  * 
  * Provides:
- * - Workspace discovery (reusing @agentchat/workspace)
+ * - Workspace discovery (reusing @agentlip/workspace)
  * - Read-only DB opening with query_only=ON
  */
 
-import { discoverWorkspaceRoot } from "@agentchat/workspace";
-import { openDb } from "@agentchat/kernel";
+import { discoverWorkspaceRoot } from "@agentlip/workspace";
+import { openDb } from "@agentlip/kernel";
 import type { Database } from "bun:sqlite";
 
 // Re-export workspace discovery for convenience
-export { discoverWorkspaceRoot } from "@agentchat/workspace";
+export { discoverWorkspaceRoot } from "@agentlip/workspace";
 
 /**
  * Error thrown when no workspace is found
  */
 export class WorkspaceNotFoundError extends Error {
   constructor(startPath: string) {
-    super(`No workspace found (no .zulip/db.sqlite3 in directory tree starting from ${startPath})`);
+    super(`No workspace found (no .agentlip/db.sqlite3 in directory tree starting from ${startPath})`);
     this.name = "WorkspaceNotFoundError";
   }
 }
@@ -59,7 +59,7 @@ export interface OpenWorkspaceDbReadonlyOptions {
  * This function:
  * 1. Discovers workspace root by walking upward from workspace (or cwd)
  * 2. Opens the database with readonly=true
- * 3. Sets PRAGMA query_only=ON (via @agentchat/kernel)
+ * 3. Sets PRAGMA query_only=ON (via @agentlip/kernel)
  * 
  * The database is opened read-only and cannot be mutated.
  * This is safe for CLI queries while hub may be running.
@@ -90,7 +90,7 @@ export async function openWorkspaceDbReadonly(
   }
 
   // Open database in read-only mode
-  // @agentchat/kernel openDb sets query_only=ON when readonly=true
+  // @agentlip/kernel openDb sets query_only=ON when readonly=true
   const db = openDb({ dbPath, readonly: true });
 
   return {

@@ -14,7 +14,7 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { unlinkSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { startHub, type HubServer } from "./index";
-import { openDb, runMigrations } from "@agentchat/kernel";
+import { openDb, runMigrations } from "@agentlip/kernel";
 import type { Database } from "bun:sqlite";
 
 const TEST_DIR = join(import.meta.dir, ".test-tmp-hub-crash-safety");

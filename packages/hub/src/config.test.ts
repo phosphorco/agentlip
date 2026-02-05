@@ -19,7 +19,7 @@ beforeEach(async () => {
   // Create a unique test directory
   testRoot = join(
     tmpdir(),
-    `agentchat-config-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    `agentlip-config-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
   );
   await fs.mkdir(testRoot, { recursive: true });
 });
@@ -41,7 +41,7 @@ describe("loadWorkspaceConfig", () => {
 
   test("loads valid minimal config", async () => {
     // Create minimal valid config
-    const configPath = join(testRoot, "zulip.config.ts");
+    const configPath = join(testRoot, "agentlip.config.ts");
     await fs.writeFile(
       configPath,
       `
@@ -58,7 +58,7 @@ describe("loadWorkspaceConfig", () => {
   });
 
   test("loads valid config with all fields", async () => {
-    const configPath = join(testRoot, "zulip.config.ts");
+    const configPath = join(testRoot, "agentlip.config.ts");
     await fs.writeFile(
       configPath,
       `
@@ -97,7 +97,7 @@ describe("loadWorkspaceConfig", () => {
   });
 
   test("throws on config with no default export", async () => {
-    const configPath = join(testRoot, "zulip.config.ts");
+    const configPath = join(testRoot, "agentlip.config.ts");
     await fs.writeFile(
       configPath,
       `
@@ -111,7 +111,7 @@ describe("loadWorkspaceConfig", () => {
   });
 
   test("throws on config with syntax error", async () => {
-    const configPath = join(testRoot, "zulip.config.ts");
+    const configPath = join(testRoot, "agentlip.config.ts");
     await fs.writeFile(
       configPath,
       `
@@ -128,7 +128,7 @@ describe("loadWorkspaceConfig", () => {
 
   test("does NOT load config from parent directory when searching from child", async () => {
     // Create config in testRoot
-    const parentConfigPath = join(testRoot, "zulip.config.ts");
+    const parentConfigPath = join(testRoot, "agentlip.config.ts");
     await fs.writeFile(
       parentConfigPath,
       `
@@ -421,7 +421,7 @@ describe("integration: config loading with plugin path validation", () => {
     await fs.writeFile(pluginPath, "export default {};");
 
     // Create config referencing plugin
-    const configPath = join(testRoot, "zulip.config.ts");
+    const configPath = join(testRoot, "agentlip.config.ts");
     await fs.writeFile(
       configPath,
       `
@@ -445,7 +445,7 @@ describe("integration: config loading with plugin path validation", () => {
   });
 
   test("rejects config with path traversal in plugin module", async () => {
-    const configPath = join(testRoot, "zulip.config.ts");
+    const configPath = join(testRoot, "agentlip.config.ts");
     await fs.writeFile(
       configPath,
       `
@@ -468,7 +468,7 @@ describe("integration: config loading with plugin path validation", () => {
   });
 
   test("accepts config with .. that stays within workspace", async () => {
-    const configPath = join(testRoot, "zulip.config.ts");
+    const configPath = join(testRoot, "agentlip.config.ts");
     await fs.writeFile(
       configPath,
       `

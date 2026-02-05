@@ -1,5 +1,5 @@
 /**
- * Unit tests for @agentchat/kernel events module
+ * Unit tests for @agentlip/kernel events module
  * 
  * Tests bd-16d.2.9 (insertEvent helper) and bd-16d.2.3 (replayEvents query)
  */

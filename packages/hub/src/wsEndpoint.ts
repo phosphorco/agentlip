@@ -1,5 +1,5 @@
 /**
- * WebSocket endpoint implementation for AgentChat Hub
+ * WebSocket endpoint implementation for Agentlip Hub
  * 
  * Implements the WS protocol from AGENTLIP_PLAN.md:
  * - Hello handshake with token validation
@@ -17,7 +17,7 @@ import {
   replayEvents,
   getEventById,
   type ParsedEvent,
-} from "@agentchat/kernel";
+} from "@agentlip/kernel";
 import { randomBytes } from "node:crypto";
 
 // ─────────────────────────────────────────────────────────────────────────────

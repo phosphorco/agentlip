@@ -1,8 +1,8 @@
-# AgentChat Local Hub v1 Plan (Consolidated)
+# Agentlip Local Hub v1 Plan (Consolidated)
 **Version:** v0.2 (plan checkpoint; incorporates locked decisions from discussion)
 **Scope:** local-only, workspace-scoped coordination substrate for AI coding agents
 **Primary deliverables:** SQLite schema + event log, Bun hub daemon (HTTP+WS), stateless CLI, TypeScript SDK, plugin isolation, minimal UI
-**Out of scope (v1):** multi-machine sync, accounts/permissions, Zulip-style unread/reactions/emoji, rich renderer, internet-facing service
+**Out of scope (v1):** multi-machine sync, accounts/permissions, Agentlip-style unread/reactions/emoji, rich renderer, internet-facing service
 
 ## How to use this plan
 1. Read **Part 0: Executive Blueprint** end-to-end—that's the contract
@@ -25,7 +25,7 @@ You're building a **local-first, durable coordination hub** for AI agents inside
 - **Extensible:** isolated TypeScript plugins for enrichment + extraction
 - **Offline/private:** localhost-bound, no internet dependency
 
-The "Zulip-inspired" piece is the **channel/topic mental model**, with one decisive structural commitment:
+The "Agentlip-inspired" piece is the **channel/topic mental model**, with one decisive structural commitment:
 
 > **Topics are first-class entities with stable IDs. Messages reference `topic_id`.**
 
@@ -84,12 +84,12 @@ The system provides idempotency at multiple layers:
 
 
 ### Data + correctness
-1. **Single-writer:** only the hub writes to `.zulip/db.sqlite3`.
+1. **Single-writer:** only the hub writes to `.agentlip/db.sqlite3`.
 2. **Atomic mutation + event:** every mutation commits its state change and corresponding `events` row(s) **in the same SQLite transaction**.
 3. **Monotonic event stream:** `events.event_id` is strictly increasing and defines total order of mutations and derived outputs.
 4. **At-least-once delivery** over WS; **clients dedupe by `event_id`**.
 5. **Ordering:** for any `message_id`, `message.created` commits before any derived events sourced from that message.
-6. **Stateless reads:** CLI can query `.zulip/db.sqlite3` read-only without hub participation.
+6. **Stateless reads:** CLI can query `.agentlip/db.sqlite3` read-only without hub participation.
 
 ### Message mutability
 7. **No hard deletes:** `messages` rows are never deleted. "Delete" is a **tombstone mutation**.
@@ -102,7 +102,7 @@ The system provides idempotency at multiple layers:
 ### Local security + isolation
 13. **Local-only bind:** hub binds to `127.0.0.1` (and optionally `::1`), never `0.0.0.0`.
 14. **Auth token required** for mutations and WS connections (cryptographically random token ≥128-bit stored in `server.json` with mode 0600).
-15. **Plugins are isolated** (Worker or subprocess). They cannot block ingestion; failures are contained. Plugins must not have write access to `.zulip/db.sqlite3` or `server.json`.
+15. **Plugins are isolated** (Worker or subprocess). They cannot block ingestion; failures are contained. Plugins must not have write access to `.agentlip/db.sqlite3` or `server.json`.
 16. **Input validation:** all endpoints validate and sanitize inputs; reject oversized payloads (message content, attachment metadata, etc.).
 17. **Rate limiting:** per-connection and global rate limits prevent DoS (configurable, sensible defaults).
 18. **No secrets in logs:** structured logs never include auth tokens, full message content, or other sensitive data.
@@ -125,7 +125,7 @@ The system provides idempotency at multiple layers:
 - Path traversal during workspace discovery
 - SQL injection via user inputs
 - Sensitive data leakage in logs or error messages
-- Untrusted workspace config (`zulip.config.ts` executes code)
+- Untrusted workspace config (`agentlip.config.ts` executes code)
 
 **Out of scope (v1 assumes localhost is trusted):**
 - Network-level attacks (no TLS; localhost-only)
@@ -134,9 +134,9 @@ The system provides idempotency at multiple layers:
 - Supply-chain attacks on npm dependencies (assumed trusted; **mitigation: use lockfiles, periodic `npm audit`, consider SRI for plugins in future**)
 
 ### Trust Boundaries
-1. **Workspace config boundary:** `zulip.config.ts` is code execution; only load from trusted workspace root (never traverse upward through untrusted directories).
+1. **Workspace config boundary:** `agentlip.config.ts` is code execution; only load from trusted workspace root (never traverse upward through untrusted directories).
 2. **Plugin boundary:** 
-   - Plugins run isolated (Worker/subprocess) with no write access to `.zulip/` directory
+   - Plugins run isolated (Worker/subprocess) with no write access to `.agentlip/` directory
    - v1: plugins CAN access network and filesystem (Worker limitations); document this risk
    - v2+: explicit capability grants (network/filesystem/environment)
    - Plugins receive read-only message data; cannot directly mutate DB
@@ -174,7 +174,7 @@ Build a **minimal, stable kernel** that:
 ### Non-goals (v1)
 - Multi-machine sync or LAN collaboration
 - Users/accounts/permissions
-- Zulip "unread" model, typing indicators, reactions
+- Agentlip "unread" model, typing indicators, reactions
 - Complex search language (support basic filtering + optional FTS5)
 - Full markdown/HTML rendering engine
 - Secure erasure / "history wipe" semantics (tombstones do not remove past events)
@@ -201,7 +201,7 @@ Strict dependency direction; keep the core small.
   - reads DB directly (queries)
   - writes via hub (mutations)
   - listens via WS (JSONL)
-- TypeScript SDK (`@agentchat/client`)
+- TypeScript SDK (`@agentlip/client`)
 - Minimal UI consuming same APIs
 - Plugin system (isolated runtime)
 
@@ -213,23 +213,23 @@ Strict dependency direction; keep the core small.
 
 ### On-disk workspace layout (authoritative)
 ```
-.zulip/
+.agentlip/
   db.sqlite3
   server.json
   config.json              # optional generated snapshot
   logs/
   locks/
     writer.lock
-zulip.config.ts            # workspace config (plugins, limits)
+agentlip.config.ts            # workspace config (plugins, limits)
 ```
 
 ### Repo layout (recommended)
 ```
 packages/
   protocol/                # protocol_v1.ts (single source of truth)
-  client/                  # @agentchat/client
-  cli/                     # agentchat
-  hub/                     # agentchatd (Bun server)
+  client/                  # @agentlip/client
+  cli/                     # agentlip
+  hub/                     # agentlipd (Bun server)
   ui/                      # minimal UI assets
   plugins/                 # built-in plugins (url extractor, etc.)
 migrations/
@@ -346,7 +346,7 @@ If message edited or deleted while enrichment/extraction job running:
 - Rate limits enforced (per-connection and global)
 - Input size limits enforced (message ≤64KB, attachment ≤16KB, WS ≤256KB)
 - Logs never contain auth tokens or full message content
-- Plugin isolation: no write access to `.zulip/` directory
+- Plugin isolation: no write access to `.agentlip/` directory
 - Workspace config loaded only from discovered workspace root
 
 ---
@@ -413,99 +413,99 @@ All API errors return a consistent shape:
 
 **Read-only queries (direct DB access, no hub required):**
 
-`agentchat channel list [--json]`
+`agentlip channel list [--json]`
 - Output: table or JSON array of channels
 - Example JSON: `[{"id": "ch_123", "name": "general", "description": null, "created_at": "2026-02-04T20:00:00Z"}]`
 
-`agentchat topic list --channel <name|id> [--json]`
+`agentlip topic list --channel <name|id> [--json]`
 - Output: topics in channel, sorted by updated_at DESC
-- Example: `agentchat topic list --channel general --json`
+- Example: `agentlip topic list --channel general --json`
 
-`agentchat msg tail --topic-id <id> [--limit 50] [--json]`
+`agentlip msg tail --topic-id <id> [--limit 50] [--json]`
 - Output: latest N messages in topic (newest first)
 - Example JSON: `[{"id": "msg_456", "sender": "agent-1", "content_raw": "Hello", "version": 1, "created_at": "...", "edited_at": null, "deleted_at": null}]`
 
-`agentchat msg page --topic-id <id> [--before-id <id>] [--after-id <id>] [--limit 50] [--json]`
+`agentlip msg page --topic-id <id> [--before-id <id>] [--after-id <id>] [--limit 50] [--json]`
 - Bidirectional pagination
-- Example: `agentchat msg page --topic-id topic_xyz --before-id msg_100 --limit 20`
+- Example: `agentlip msg page --topic-id topic_xyz --before-id msg_100 --limit 20`
 
-`agentchat search <query> [--channel <name>] [--topic-id <id>] [--limit 100] [--json]`
+`agentlip search <query> [--channel <name>] [--topic-id <id>] [--limit 100] [--json]`
 - Basic search (LIKE-based); uses FTS5 if available (faster, better ranking)
 - Query syntax:
   - FTS available: `"exact phrase"`, `word1 word2` (AND), `word1 OR word2`
   - FTS unavailable: simple substring match (`WHERE content_raw LIKE '%query%'`)
-- Example: `agentchat search "error message" --channel general --limit 10`
-- Example phrase: `agentchat search '"connection refused"' --json`
+- Example: `agentlip search "error message" --channel general --limit 10`
+- Example phrase: `agentlip search '"connection refused"' --json`
 - Response includes `fts_used: boolean` field indicating search method used
 
-`agentchat attachment list --topic-id <id> [--kind <kind>] [--json]`
+`agentlip attachment list --topic-id <id> [--kind <kind>] [--json]`
 - List attachments for a topic
-- Example: `agentchat attachment list --topic-id topic_xyz --kind url --json`
+- Example: `agentlip attachment list --topic-id topic_xyz --kind url --json`
 
 **Mutations (require running hub):**
 
-`agentchat msg send --topic-id <id> --sender <name> [--content <text>] [--stdin]`
+`agentlip msg send --topic-id <id> --sender <name> [--content <text>] [--stdin]`
 - Send message (content from arg or stdin)
-- Example: `echo "Hello world" | agentchat msg send --topic-id topic_xyz --sender agent-1 --stdin`
+- Example: `echo "Hello world" | agentlip msg send --topic-id topic_xyz --sender agent-1 --stdin`
 - Response: `{"message_id": "msg_789", "event_id": 42}`
 
-`agentchat msg edit <message_id> --content <text> [--expected-version <n>]`
+`agentlip msg edit <message_id> --content <text> [--expected-version <n>]`
 - Edit message content with optional optimistic lock
-- Example: `agentchat msg edit msg_456 --content "Updated text" --expected-version 2`
+- Example: `agentlip msg edit msg_456 --content "Updated text" --expected-version 2`
 - On conflict: exit code 2, stderr: `Error: version conflict (current: 4)`
 
-`agentchat msg delete <message_id> --actor <name> [--expected-version <n>]`
+`agentlip msg delete <message_id> --actor <name> [--expected-version <n>]`
 - Tombstone delete
-- Example: `agentchat msg delete msg_456 --actor agent-1`
+- Example: `agentlip msg delete msg_456 --actor agent-1`
 - Response: `{"deleted": true, "event_id": 43}`
 
-`agentchat msg retopic <message_id> --to-topic-id <id> --mode <one|later|all> [--force]`
+`agentlip msg retopic <message_id> --to-topic-id <id> --mode <one|later|all> [--force]`
 - Move message(s) to different topic (same channel only)
 - `--force` required for mode=all (safety guardrail)
-- Example: `agentchat msg retopic msg_100 --to-topic-id topic_new --mode later`
-- Example all: `agentchat msg retopic msg_50 --to-topic-id topic_archive --mode all --force`
+- Example: `agentlip msg retopic msg_100 --to-topic-id topic_new --mode later`
+- Example all: `agentlip msg retopic msg_50 --to-topic-id topic_archive --mode all --force`
 - Error on cross-channel: exit code 1, stderr: `Error: cross-channel move forbidden`
 
-`agentchat topic rename <topic_id> --title <new_title>`
+`agentlip topic rename <topic_id> --title <new_title>`
 - Rename topic
-- Example: `agentchat topic rename topic_xyz --title "New Title"`
+- Example: `agentlip topic rename topic_xyz --title "New Title"`
 
-`agentchat attachment add --topic-id <id> --kind <kind> --value-json <json> [--key <key>] [--source-message-id <id>] [--dedupe-key <key>]`
+`agentlip attachment add --topic-id <id> --kind <kind> --value-json <json> [--key <key>] [--source-message-id <id>] [--dedupe-key <key>]`
 - Add attachment (manual or scripted)
-- Example: `agentchat attachment add --topic-id topic_xyz --kind url --value-json '{"url":"https://example.com","title":"Example"}' --source-message-id msg_123`
+- Example: `agentlip attachment add --topic-id topic_xyz --kind url --value-json '{"url":"https://example.com","title":"Example"}' --source-message-id msg_123`
 - Response on new: `{"attachment_id": "att_999", "event_id": 44}`
 - Response on dedupe: `{"attachment_id": "att_888", "event_id": null, "deduplicated": true}`
 
 **Listening (WebSocket stream):**
 
-`agentchat listen [--since <event_id>] [--channel <name|id>...] [--topic-id <id>...] [--format jsonl]`
+`agentlip listen [--since <event_id>] [--channel <name|id>...] [--topic-id <id>...] [--format jsonl]`
 - Stream events to stdout
 - Defaults: since=0 (all history), no filters (all events), format=jsonl
-- Example: `agentchat listen --since 42 --channel general --format jsonl`
+- Example: `agentlip listen --since 42 --channel general --format jsonl`
 - Output: one JSON envelope per line
 - Reconnects automatically on disconnect; resumes from last seen event_id
 - Exit: Ctrl+C or SIGTERM
 
 **Daemon control:**
 
-`agentchatd up [--port <port>] [--host 127.0.0.1] [--config <path>]`
+`agentlipd up [--port <port>] [--host 127.0.0.1] [--config <path>]`
 - Start hub daemon
 - Defaults: port from `server.json` or random, host=127.0.0.1
 - Writes `server.json` with token + instance_id
-- Example: `agentchatd up --port 8080`
+- Example: `agentlipd up --port 8080`
 
-`agentchatd down`
+`agentlipd down`
 - Graceful shutdown (finds hub via server.json, sends SIGTERM)
 
-`agentchatd status`
+`agentlipd status`
 - Check hub health and print info
 - Output: `{"status": "running", "instance_id": "...", "db_id": "...", "schema_version": 1, "port": 8080}`
 
-`agentchat init [--workspace <path>]`
-- Initialize workspace (create `.zulip/` and schema)
-- Example: `agentchat init` (in repo root)
+`agentlip init [--workspace <path>]`
+- Initialize workspace (create `.agentlip/` and schema)
+- Example: `agentlip init` (in repo root)
 
-`agentchat doctor`
+`agentlip doctor`
 - Run diagnostics (DB integrity, schema version, server health, etc.)
 
 **Exit codes:**
@@ -849,9 +849,9 @@ async function connect() {
 - Clients read this to discover port and token
 - Advisory only; `/health` validation is authoritative
 
-**`zulip.config.ts` (workspace config, optional):**
+**`agentlip.config.ts` (workspace config, optional):**
 ```typescript
-import type { WorkspaceConfig } from '@agentchat/hub';
+import type { WorkspaceConfig } from '@agentlip/hub';
 
 const config: WorkspaceConfig = {
   // Plugin configuration
@@ -969,7 +969,7 @@ interface EnrichInput {
     channel_id: string;
     created_at: string;
   };
-  config: Record<string, unknown>;  // from zulip.config.ts
+  config: Record<string, unknown>;  // from agentlip.config.ts
 }
 
 interface ExtractInput {
@@ -1029,12 +1029,12 @@ const exampleAttachment: Attachment = {
 - Plugins run in Bun Worker (separate thread, no shared memory)
 - Timeout enforced (default 5s, configurable per plugin)
 - If plugin throws or times out: log error, may emit internal error event, do not crash hub
-- No write access to `.zulip/` directory (read-only DB access via RPC if needed in future)
+- No write access to `.agentlip/` directory (read-only DB access via RPC if needed in future)
 - v1 limitation: plugins CAN access network and filesystem (Worker limitations); documented risk
 - Future: explicit capability grants
 
 **Plugin lifecycle:**
-1. Hub loads plugins from `zulip.config.ts` on startup
+1. Hub loads plugins from `agentlip.config.ts` on startup
 2. For each new/edited message:
    - Hub spawns Worker with plugin code
    - Passes message + config via RPC
@@ -1135,7 +1135,7 @@ v1 protocol principles:
    - Client replay: if gap detected (e.g., request >100, receive 150), no events in range 101-149
 
 **Gap detection and handling:**
-- `agentchat doctor` should scan event log for gaps:
+- `agentlip doctor` should scan event log for gaps:
   ```sql
   -- Find gaps in event_id sequence
   WITH RECURSIVE cnt(id) AS (
@@ -1247,7 +1247,7 @@ Old clients ignore `word_count`; new clients can use it. Both work.
 ## 0.10 Output + Concurrency Architecture
 
 ### Single-writer implementation
-- `.zulip/locks/writer.lock` acquired via exclusive create.
+- `.agentlip/locks/writer.lock` acquired via exclusive create.
 - Hub verifies staleness by `/health` (and PID liveness if available).
 - DB uses WAL + configured busy timeout.
 
@@ -1264,7 +1264,7 @@ Old clients ignore `word_count`; new clients can use it. Both work.
 - **Lock contention timeout:** if `busy_timeout` expires, return 503 with `Retry-After` header; client should implement exponential backoff
 - **WAL checkpoint failure (disk full, I/O error):** checkpoint is best-effort; WAL can grow; monitor WAL size; if WAL exceeds threshold (e.g., 100MB), reject new writes with 503 until checkpoint succeeds or admin intervenes
 - **Power loss mid-transaction:** WAL recovery on restart; transaction either fully committed or fully rolled back (atomicity guarantee)
-- **Corruption detection:** on any `SQLITE_CORRUPT` error, immediately stop serving, mark DB as suspect, require `agentchat doctor --repair` before restart
+- **Corruption detection:** on any `SQLITE_CORRUPT` error, immediately stop serving, mark DB as suspect, require `agentlip doctor --repair` before restart
 
 **Derived pipelines** run in separate transactions after commit. If hub crashes during derived processing, derived data may be incomplete but canonical state (messages/events) is intact and replayable.
 
@@ -1272,7 +1272,7 @@ Old clients ignore `word_count`; new clients can use it. Both work.
 - On hub restart: scan for messages with no enrichments/attachments but should have them (heuristic: recent messages, or messages modified after last enrichment timestamp)
 - Option 1: background re-enrichment job
 - Option 2: lazy re-enrichment on read (if enrichments missing, queue job)
-- v1: **no automatic recovery**; manual `agentchat re-enrich --since <event_id>` command for admin
+- v1: **no automatic recovery**; manual `agentlip re-enrich --since <event_id>` command for admin
 
 ### Optimistic concurrency
 For edit/delete/move_topic:
@@ -1394,7 +1394,7 @@ Major "churn magnet" decisions now locked:
 ## 0.12 Definition of Done (v1)
 Ship when all true:
 
-- ✅ Workspace init creates `.zulip/` and schema v1
+- ✅ Workspace init creates `.agentlip/` and schema v1
 - ✅ Hub starts, acquires write lock, writes `server.json`, serves `/health`
 - ✅ Channels/topics/messages CRUD (as specified)
 - ✅ Message edit with optimistic concurrency (emits `message.edited`)
@@ -1515,7 +1515,7 @@ Given:
 - Channel `general` with topics `bugs` and `archive`
 - Messages in `bugs`: msg_1, msg_2, msg_3, msg_4, msg_5
 
-Scenario: `agentchat msg retopic msg_3 --to-topic-id archive --mode later`
+Scenario: `agentlip msg retopic msg_3 --to-topic-id archive --mode later`
 
 Expected behavior:
 1. Select messages: msg_3, msg_4, msg_5 (all with `id >= msg_3` in topic `bugs`)
@@ -1549,7 +1549,7 @@ Subscribers affected:
 
 Cross-channel rejection example:
 ```bash
-$ agentchat msg retopic msg_3 --to-topic-id other_channel_topic --mode one
+$ agentlip msg retopic msg_3 --to-topic-id other_channel_topic --mode one
 Error: cross-channel move forbidden
 Exit code: 1
 ```
@@ -2130,9 +2130,9 @@ COMMIT;
 
 ### 4.1 Workspace discovery (CLI + SDK)
 1. Start at `cwd` (or provided path)
-2. Walk upward until `.zulip/db.sqlite3` exists
+2. Walk upward until `.agentlip/db.sqlite3` exists
 3. That directory is workspace root
-4. **Security:** stop traversal at filesystem boundary or user home directory; never load `zulip.config.ts` from untrusted parent directories
+4. **Security:** stop traversal at filesystem boundary or user home directory; never load `agentlip.config.ts` from untrusted parent directories
 5. `server.json` is advisory; validate via `/health`
 
 ### 4.2 Hub lifecycle and health checks
@@ -2156,10 +2156,10 @@ COMMIT;
 - Used for staleness detection and validation
 
 **Hub startup sequence:**
-1. Validate workspace: `.zulip/db.sqlite3` exists and readable
+1. Validate workspace: `.agentlip/db.sqlite3` exists and readable
 2. Open DB, set PRAGMAs (WAL, foreign_keys, busy_timeout)
 3. Check `meta.schema_version`; run migrations if needed
-4. Acquire writer lock (`.zulip/locks/writer.lock`)
+4. Acquire writer lock (`.agentlip/locks/writer.lock`)
    - If lock exists: validate via `/health` on port from existing `server.json`
    - If stale (no response or PID dead): remove lock
    - If live: fail with error "hub already running"
@@ -2167,7 +2167,7 @@ COMMIT;
 6. Load or generate `auth_token` (crypto random ≥128-bit)
 7. Bind HTTP server to localhost:port
 8. Write `server.json` (chmod 0600)
-9. Load `zulip.config.ts` (if exists)
+9. Load `agentlip.config.ts` (if exists)
 10. Initialize plugin workers
 11. Log startup event to `events` table
 12. Begin serving requests
@@ -2185,11 +2185,11 @@ COMMIT;
 **Startup failure modes:**
 - Schema version too new: refuse to start, instruct user to upgrade hub
 - Schema version too old: auto-migrate (with backup) or refuse if migration disabled
-- DB corrupted: exit with error, recommend `agentchat doctor`
+- DB corrupted: exit with error, recommend `agentlip doctor`
 - Lock acquisition failed (live hub): exit with error showing running hub details
 - Port bind failed: exit with error (port already in use)
 
-**`agentchatd status` command:**
+**`agentlipd status` command:**
 1. Read `server.json` (if absent: "no hub running")
 2. Call `GET /health` on port from server.json
 3. Validate:
@@ -2206,7 +2206,7 @@ Schema version: 1
 Protocol version: v1
 ```
 
-**`agentchatd down` command:**
+**`agentlipd down` command:**
 1. Read `server.json` to find running hub
 2. Send SIGTERM to PID (if available)
 3. Wait for graceful shutdown (timeout 10s)
@@ -2302,7 +2302,7 @@ WHERE id = :message_id;
    - Re-enrichment fetches URL, gets title "New Title"
    - Outcome: attachment updated? Or duplicate?
    - v1 decision: **attachments are immutable once inserted**; dedupe_key prevents duplicates; external changes not tracked
-   - If URL content changes, manual re-extraction required (`agentchat re-extract --message-id <id>` future command)
+   - If URL content changes, manual re-extraction required (`agentlip re-extract --message-id <id>` future command)
 
 5. **Message deleted (tombstoned) while plugin running:**
    - Plugin reads content, starts processing
@@ -2413,7 +2413,7 @@ WHERE id = :message_id;
 
 **Approach 5: Filesystem simulation**
 - Fill disk (create large file to consume space)
-- Make `.zulip/` read-only (chmod 555)
+- Make `.agentlip/` read-only (chmod 555)
 - Delete `server.json` while hub running
 - Create lock file with wrong PID
 - Verify hub detects conditions, logs errors, fails gracefully
@@ -2517,7 +2517,7 @@ test('concurrent edits with expected_version', async () => {
 
 ## Chapter 6: Operational Playbook
 
-### 6.1 Startup (`agentchatd up`)
+### 6.1 Startup (`agentlipd up`)
 - acquire writer lock
 - open DB; set PRAGMAs (WAL, foreign_keys, busy_timeout, etc.)
 - apply migrations (backup first)
@@ -2532,7 +2532,7 @@ test('concurrent edits with expected_version', async () => {
 - event log continues monotonic (DB-managed ids)
 
 ### 6.3 Doctor / troubleshooting
-`agentchat doctor`:
+`agentlip doctor`:
 - SQLite integrity check (`PRAGMA integrity_check`)
 - WAL checkpoint status (`PRAGMA wal_checkpoint(PASSIVE)`)
 - WAL file size (warn if >100MB; suggest checkpoint or investigate lock holders)
@@ -2547,11 +2547,11 @@ test('concurrent edits with expected_version', async () => {
   - `db_id` matches database `meta.db_id`
   - `/health` reachable and returns matching `instance_id`
 - Orphaned lock files (writer.lock exists but no live hub)
-- Plugin configuration validation (zulip.config.ts syntax, plugin modules exist)
+- Plugin configuration validation (agentlip.config.ts syntax, plugin modules exist)
 - Rate limit configuration sanity (not zero, not too high)
 
 **Doctor repair mode:**
-`agentchat doctor --repair`:
+`agentlip doctor --repair`:
 - Fix file permissions (chmod 0600 on server.json)
 - Remove stale lock files (after confirming PID dead or /health unreachable)
 - Checkpoint WAL
@@ -2561,9 +2561,9 @@ test('concurrent edits with expected_version', async () => {
 
 **Doctor output format:**
 ```
-AgentChat Doctor v1.0
+Agentlip Doctor v1.0
 
-Workspace: /Users/cole/project/.zulip
+Workspace: /Users/cole/project/.agentlip
 Database: db_id abc-123-def-456
 
 [✓] Database integrity: OK
@@ -2576,7 +2576,7 @@ Database: db_id abc-123-def-456
 [✓] server.json: valid, mode 0600
 
 Warnings:
-- WAL file is large; run `agentchat doctor --checkpoint` to reclaim space
+- WAL file is large; run `agentlip doctor --checkpoint` to reclaim space
 
 Summary: 1 warning, 0 errors
 ```
@@ -2613,7 +2613,7 @@ Summary: 1 warning, 0 errors
 **Monitoring implementation (v1):**
 - Hub emits structured JSON logs with metrics
 - External log aggregator (e.g., Loki, CloudWatch) parses and alerts
-- `agentchat doctor --monitor` (future): CLI command to dump current metrics
+- `agentlip doctor --monitor` (future): CLI command to dump current metrics
 
 **Example log entry (metrics event):**
 ```json
@@ -2658,7 +2658,7 @@ Summary: 1 warning, 0 errors
 - Detection: monitor WAL size; alert if >100MB
 - Mitigation:
   - Identify long-running readers (`PRAGMA wal_checkpoint(TRUNCATE)` shows busy status)
-  - Force checkpoint: `agentchat doctor --checkpoint`
+  - Force checkpoint: `agentlip doctor --checkpoint`
   - If CLI is culprit: close stale connections/queries
   - If hub is culprit: restart hub (flush WAL on shutdown)
 - Prevention:
@@ -2675,7 +2675,7 @@ Summary: 1 warning, 0 errors
 - No correctness impact (event ordering unaffected)
 
 **Permission errors:**
-- `.zulip/` directory not writable: hub cannot create lock, write server.json → exit with error
+- `.agentlip/` directory not writable: hub cannot create lock, write server.json → exit with error
 - `db.sqlite3` read-only: hub cannot acquire write lock → exit with error
 - `server.json` wrong permissions (not 0600): security risk; hub should warn or refuse to start
 - Plugin module files not readable: plugin load fails; log error; skip plugin (non-fatal)
@@ -2749,7 +2749,7 @@ Summary: 1 warning, 0 errors
   - Use journaling filesystem (ext4, APFS) with barriers enabled
 
 **Plugin module not found:**
-- `zulip.config.ts` references `./custom-plugins/foo.ts`, file doesn't exist
+- `agentlip.config.ts` references `./custom-plugins/foo.ts`, file doesn't exist
 - Hub startup: log error, skip plugin, continue (non-fatal)
 - Or: fail fast (exit with error) if plugin loading is critical
 - v1 decision: **warn and skip missing plugins**; hub starts without them
@@ -2785,7 +2785,7 @@ Summary: 1 warning, 0 errors
 
 **Exit**
 - Gate A passes
-- `agentchatd status` works
+- `agentlipd status` works
 
 ### Phase 1: Core messaging + mutability
 **Build**
@@ -2811,7 +2811,7 @@ Summary: 1 warning, 0 errors
 
 ### Phase 3: Plugin system v1
 **Build**
-- `zulip.config.ts` loading
+- `agentlip.config.ts` loading
 - Worker isolation + timeouts + circuit breaker
 - linkifier → `message.enriched`
 - extractor → `topic.attachment_added`
@@ -2823,7 +2823,7 @@ Summary: 1 warning, 0 errors
 ### Phase 4: Minimal UI + SDK polish
 **Build**
 - `/ui` browsing and live updates
-- `@agentchat/client` + served bundle if needed
+- `@agentlip/client` + served bundle if needed
 - docs + examples
 
 **Exit**
@@ -2887,21 +2887,21 @@ Summary: 1 warning, 0 errors
 - [ ] URL extraction built-in plugin (with configurable allowlist/blocklist)
 
 ## Plugin system
-- [ ] `zulip.config.ts` loader with config schema (workspace root only; path traversal protection)
+- [ ] `agentlip.config.ts` loader with config schema (workspace root only; path traversal protection)
 - [ ] Worker runtime harness (RPC, timeouts, circuit breaker)
-- [ ] Plugin isolation (no write access to `.zulip/` directory)
+- [ ] Plugin isolation (no write access to `.agentlip/` directory)
 - [ ] Linkifiers: write derived rows, emit `message.enriched`
 - [ ] Extractors: insert attachments, emit `topic.attachment_added`
 - [ ] Staleness guard for derived jobs (verify content + `deleted_at`; discard if tombstoned)
 
-## CLI (`agentchat`)
+## CLI (`agentlip`)
 - [ ] Workspace discovery + DB read-only open
 - [ ] Read-only commands (channel/topic/msg/attachments/search)
 - [ ] Mutations via HTTP (send/edit/delete/retopic/attach)
 - [ ] `listen` via WS outputting JSONL
 - [ ] Stable machine-readable error codes and schemas
 
-## SDK (`@agentchat/client`)
+## SDK (`@agentlip/client`)
 - [ ] Workspace discovery helper
 - [ ] Read `server.json`, validate via `/health`
 - [ ] WS connect with replay and reconnect loop
@@ -2912,9 +2912,9 @@ Summary: 1 warning, 0 errors
 
 **Connect and stream events:**
 ```typescript
-import { AgentChatClient } from '@agentchat/client';
+import { AgentlipClient } from '@agentlip/client';
 
-const client = new AgentChatClient({
+const client = new AgentlipClient({
   workspacePath: process.cwd(),  // auto-discover from here
   afterEventId: 0,  // or load from persistent storage
   subscriptions: {
@@ -2994,7 +2994,7 @@ client.on('reconnect', (afterEventId) => {
 
 **SDK interface:**
 ```typescript
-interface AgentChatClient {
+interface AgentlipClient {
   // Connection lifecycle
   connect(): Promise<void>;
   disconnect(): Promise<void>;
@@ -3056,7 +3056,7 @@ interface EventEnvelope {
   - [ ] Auth token leakage (verify not in logs or error responses)
   - [ ] File permissions (verify server.json is 0600)
   - [ ] Localhost bind (verify rejects `0.0.0.0` by default)
-  - [ ] Plugin isolation (verify no write access to `.zulip/`)
+  - [ ] Plugin isolation (verify no write access to `.agentlip/`)
   - [ ] Workspace discovery (verify stops at boundary; no untrusted config loading)
 - [ ] CI matrix with FTS on/off
 
@@ -3152,8 +3152,8 @@ interface EventEnvelope {
 - [ ] Auth token in error response: send invalid request, verify token not echoed in response
 - [ ] server.json permissions: create server.json with mode 0644, verify hub fixes or refuses to start
 - [ ] Localhost bind check: configure hub with 0.0.0.0, verify rejection (unless --unsafe-network)
-- [ ] Plugin write attempt: plugin tries to write to `.zulip/db.sqlite3`, verify permission denied or isolation prevents
-- [ ] Workspace discovery upward traversal: create `.zulip/` in parent dir, run CLI in child, verify stops at workspace root
+- [ ] Plugin write attempt: plugin tries to write to `.agentlip/db.sqlite3`, verify permission denied or isolation prevents
+- [ ] Workspace discovery upward traversal: create `.agentlip/` in parent dir, run CLI in child, verify stops at workspace root
 
 **Migration edge cases:**
 - [ ] Upgrade 1→2 with data: apply migration, verify schema_version updated, data intact
@@ -3178,7 +3178,7 @@ interface EventEnvelope {
 # Appendices
 
 ## Appendix A: Glossary
-- **Workspace:** Repository directory containing `.zulip/` state
+- **Workspace:** Repository directory containing `.agentlip/` state
 - **Channel:** Long-lived bucket for project/team scope
 - **Topic:** Thread entity with stable ID; belongs to a channel
 - **Message:** Stable identity; mutable via explicit edit; deletable via tombstone
@@ -3264,18 +3264,18 @@ interface EventEnvelope {
     - Residual risk: distributed attack (many clients); add IP-based limit (future, requires reverse proxy)
 
 19. **Malicious plugin (filesystem access, network abuse, resource exhaustion)**
-    - Mitigation: Worker isolation; timeouts; no write access to `.zulip/`; future: explicit capability grants
+    - Mitigation: Worker isolation; timeouts; no write access to `.agentlip/`; future: explicit capability grants
     - Residual risk: v1 plugins CAN access network and filesystem (Worker limitations); document risk
 
 20. **Path traversal during workspace discovery**
-    - Mitigation: stop at filesystem boundary; never load `zulip.config.ts` from untrusted parent dirs
-    - Residual risk: symlink attack (`.zulip` symlinked to attacker-controlled dir); resolve symlinks, validate ownership
+    - Mitigation: stop at filesystem boundary; never load `agentlip.config.ts` from untrusted parent dirs
+    - Residual risk: symlink attack (`.agentlip` symlinked to attacker-controlled dir); resolve symlinks, validate ownership
 
 21. **Sensitive data in event log (user thinks "deleted" = erased)**
     - Mitigation: document clearly that tombstones do not erase; events are immutable; old content may persist in historical events
     - Residual risk: users expect secure deletion; add "archive-and-purge" workflow (future, requires v2 with event log truncation)
 
-22. **Untrusted workspace config (code execution via `zulip.config.ts`)**
+22. **Untrusted workspace config (code execution via `agentlip.config.ts`)**
     - Mitigation: only load from discovered workspace root; document that workspace is trusted; consider signature verification (future)
     - Residual risk: developer clones malicious repo, runs CLI; code executes; warn on untrusted workspace
 
@@ -3357,7 +3357,7 @@ interface EventEnvelope {
 - [ ] Hub rejects `0.0.0.0` bind by default
 - [ ] Rate limits enforced (test with burst requests)
 - [ ] Input size limits enforced (test with oversized payloads)
-- [ ] Plugin isolation verified (cannot write to `.zulip/`)
+- [ ] Plugin isolation verified (cannot write to `.agentlip/`)
 - [ ] Workspace discovery stops at boundary (test with untrusted parent)
 - [ ] Error responses are generic (no path/token leakage)
 
@@ -3376,7 +3376,7 @@ interface EventEnvelope {
 ### Operational robustness
 - [ ] Disk space monitoring: verify doctor reports low disk space
 - [ ] WAL size monitoring: verify doctor reports large WAL (>100MB)
-- [ ] WAL checkpoint: verify `agentchat doctor --checkpoint` succeeds
+- [ ] WAL checkpoint: verify `agentlip doctor --checkpoint` succeeds
 - [ ] File descriptor limit: verify connection limit prevents exhaustion
 - [ ] Hub graceful shutdown: verify closes WS (1001), flushes WAL, removes lock
 - [ ] Hub crash cleanup: verify stale lock removed on next start

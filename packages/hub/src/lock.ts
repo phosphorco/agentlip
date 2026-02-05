@@ -10,7 +10,7 @@ export interface HealthCheckFn {
 /**
  * Acquire writer lock for the workspace.
  * 
- * Lock path: .zulip/locks/writer.lock
+ * Lock path: .agentlip/locks/writer.lock
  * 
  * If lock exists:
  * - Reads server.json to get port/instance info
@@ -27,7 +27,7 @@ export async function acquireWriterLock({
   workspaceRoot: string;
   healthCheck: HealthCheckFn;
 }): Promise<void> {
-  const locksDir = join(workspaceRoot, ".zulip", "locks");
+  const locksDir = join(workspaceRoot, ".agentlip", "locks");
   const lockPath = join(locksDir, "writer.lock");
 
   // Ensure locks directory exists
@@ -137,7 +137,7 @@ export async function releaseWriterLock({
 }: {
   workspaceRoot: string;
 }): Promise<void> {
-  const lockPath = join(workspaceRoot, ".zulip", "locks", "writer.lock");
+  const lockPath = join(workspaceRoot, ".agentlip", "locks", "writer.lock");
 
   try {
     await unlink(lockPath);
@@ -159,7 +159,7 @@ export async function readLockInfo({
 }: {
   workspaceRoot: string;
 }): Promise<string | null> {
-  const lockPath = join(workspaceRoot, ".zulip", "locks", "writer.lock");
+  const lockPath = join(workspaceRoot, ".agentlip", "locks", "writer.lock");
 
   try {
     return await readFile(lockPath, "utf-8");

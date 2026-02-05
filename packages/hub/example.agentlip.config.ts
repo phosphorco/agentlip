@@ -1,8 +1,8 @@
 /**
- * Example workspace configuration for AgentChat
+ * Example workspace configuration for Agentlip
  * 
- * This file demonstrates the full schema for zulip.config.ts
- * Place this file at your workspace root (same directory as .zulip/)
+ * This file demonstrates the full schema for agentlip.config.ts
+ * Place this file at your workspace root (same directory as .agentlip/)
  * 
  * Security notes:
  * - Only loaded from workspace root (never traverses upward)
@@ -10,7 +10,7 @@
  * - This file is code execution - only use in trusted workspaces
  */
 
-import type { WorkspaceConfig } from '@agentchat/hub';
+import type { WorkspaceConfig } from '@agentlip/hub';
 
 const config: WorkspaceConfig = {
   // Plugin configuration

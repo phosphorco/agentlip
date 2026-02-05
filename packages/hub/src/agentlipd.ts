@@ -1,15 +1,15 @@
 #!/usr/bin/env bun
 /**
- * agentchatd CLI - daemon control utilities
+ * agentlipd CLI - daemon control utilities
  *
  * Commands:
  * - status: check hub health and validate against on-disk DB
  */
 
 import { readServerJson } from "./serverJson.js";
-import { discoverWorkspaceRoot } from "@agentchat/workspace";
-import { openDb } from "@agentchat/kernel";
-import type { HealthResponse } from "@agentchat/protocol";
+import { discoverWorkspaceRoot } from "@agentlip/workspace";
+import { openDb } from "@agentlip/kernel";
+import type { HealthResponse } from "@agentlip/protocol";
 
 interface StatusOptions {
   workspace?: string;
@@ -87,7 +87,7 @@ export async function checkStatus(
   if (!discovered) {
     return {
       status: "not_running",
-      error: "No workspace found (no .zulip/db.sqlite3 in current directory tree)",
+      error: "No workspace found (no .agentlip/db.sqlite3 in current directory tree)",
     };
   }
 
@@ -209,16 +209,16 @@ function printHumanStatus(result: StatusResult): void {
  * Main CLI entry point.
  */
 function printHelp(): void {
-  console.log("Usage: agentchatd <command> [options]");
+  console.log("Usage: agentlipd <command> [options]");
   console.log();
   console.log("Commands:");
   console.log("  status   Check hub health using server.json and validate db_id");
   console.log();
-  console.log("Run: agentchatd status --help");
+  console.log("Run: agentlipd status --help");
 }
 
 function printStatusHelp(): void {
-  console.log("Usage: agentchatd status [--workspace <path>] [--json]");
+  console.log("Usage: agentlipd status [--workspace <path>] [--json]");
   console.log();
   console.log("Check hub health and validate against on-disk database.");
   console.log();

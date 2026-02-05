@@ -1,5 +1,5 @@
 /**
- * Security baseline test suite for AgentChat Hub
+ * Security baseline test suite for Agentlip Hub
  *
  * Coverage:
  * - Localhost bind validation (reject 0.0.0.0 unless allowUnsafeNetwork)
@@ -164,7 +164,7 @@ describe("server.json security", () => {
   let tempDir: string;
 
   beforeEach(async () => {
-    tempDir = await mkdtemp(join(tmpdir(), "agentchat-test-"));
+    tempDir = await mkdtemp(join(tmpdir(), "agentlip-test-"));
   });
 
   afterEach(async () => {
@@ -185,7 +185,7 @@ describe("server.json security", () => {
 
     await writeServerJson({ workspaceRoot: tempDir, data: serverData });
 
-    const serverJsonPath = join(tempDir, ".zulip", "server.json");
+    const serverJsonPath = join(tempDir, ".agentlip", "server.json");
     const fileStat = await stat(serverJsonPath);
 
     // mode & 0o777 masks out file type bits, leaving permission bits
@@ -242,8 +242,8 @@ describe("server.json security", () => {
 
     await writeServerJson({ workspaceRoot: tempDir, data: serverData });
 
-    const zulipDir = join(tempDir, ".zulip");
-    const dirStat = await stat(zulipDir);
+    const agentlipDir = join(tempDir, ".agentlip");
+    const dirStat = await stat(agentlipDir);
     const permissions = dirStat.mode & 0o777;
     expect(permissions).toBe(0o700);
   });

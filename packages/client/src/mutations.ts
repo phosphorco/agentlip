@@ -1,5 +1,5 @@
 /**
- * AgentChat Client SDK - HTTP Mutation Methods
+ * Agentlip Client SDK - HTTP Mutation Methods
  * 
  * Convenience wrappers around the hub's POST/PATCH /api/v1/* endpoints.
  * Each method handles:
@@ -8,7 +8,7 @@
  * - JSON serialization/deserialization
  */
 
-import type { ApiErrorResponse, ErrorCode } from '@agentchat/protocol';
+import type { ApiErrorResponse, ErrorCode } from '@agentlip/protocol';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Client Configuration

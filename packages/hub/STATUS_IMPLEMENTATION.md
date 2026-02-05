@@ -1,11 +1,11 @@
-# agentchatd status Implementation
+# agentlipd status Implementation
 
 ## Overview
 
-Implemented `agentchatd status` command as specified in AGENTLIP_PLAN.md §4.2 and bead bd-16d.1.11.
+Implemented `agentlipd status` command as specified in AGENTLIP_PLAN.md §4.2 and bead bd-16d.1.11.
 
 The command:
-- Reads `.zulip/server.json` (if absent → status=not_running)
+- Reads `.agentlip/server.json` (if absent → status=not_running)
 - Calls `GET /health` on port from server.json (timeout 5s)
 - Validates `db_id` from /health against on-disk `meta.db_id`
 - Prints status (human or JSON) with instance_id, port, pid, uptime, schema_version, protocol_version
@@ -15,7 +15,7 @@ The command:
 
 ### New Files
 
-1. **`packages/hub/src/agentchatd.ts`** (237 lines)
+1. **`packages/hub/src/agentlipd.ts`** (237 lines)
    - Main CLI implementation
    - `checkStatus()`: core status checking logic
    - `main()`: CLI argument parsing and output
@@ -39,9 +39,9 @@ The command:
 ### Modified Files
 
 4. **`packages/hub/package.json`**
-   - Added exports for `./agentchatd`
+   - Added exports for `./agentlipd`
    - Added `bin` entry for CLI usage
-   - Added dependencies: `@agentchat/workspace`, `@agentchat/kernel`
+   - Added dependencies: `@agentlip/workspace`, `@agentlip/kernel`
 
 ## Usage
 
@@ -49,20 +49,20 @@ The command:
 
 ```bash
 # Check status in current workspace (auto-discover)
-bun packages/hub/src/agentchatd.ts status
+bun packages/hub/src/agentlipd.ts status
 
 # Explicit workspace path
-bun packages/hub/src/agentchatd.ts status --workspace /path/to/workspace
+bun packages/hub/src/agentlipd.ts status --workspace /path/to/workspace
 
 # JSON output
-bun packages/hub/src/agentchatd.ts status --json
+bun packages/hub/src/agentlipd.ts status --json
 ```
 
 ### After Installation (future)
 
 Once bun installs the workspace, you can use:
 ```bash
-agentchatd status [--workspace <path>] [--json]
+agentlipd status [--workspace <path>] [--json]
 ```
 
 ### Example Output
@@ -166,7 +166,7 @@ bun packages/hub/verify-status.ts
 
 **Expected output:**
 ```
-=== AgentChat Status Command Verification ===
+=== Agentlip Status Command Verification ===
 
 Test 1: No server.json (hub not running)
 ✓ Status is not_running
@@ -222,7 +222,7 @@ Verifies TypeScript compilation without errors.
 
 The status command validates that the running hub is serving the correct database. This requires comparing:
 - What the hub reports (via /health)
-- What's actually on disk (in .zulip/db.sqlite3)
+- What's actually on disk (in .agentlip/db.sqlite3)
 
 If they don't match, the hub might be:
 - Pointing to a different database file
@@ -238,9 +238,9 @@ Per spec (AGENTLIP_PLAN.md §4.2), status checks should be fast and fail quickly
 
 But short enough to avoid hanging indefinitely on dead connections.
 
-### Why use workspace discovery instead of explicit .zulip path?
+### Why use workspace discovery instead of explicit .agentlip path?
 
-Matches the pattern established in other AgentChat tools:
+Matches the pattern established in other Agentlip tools:
 - Auto-discover workspace from cwd (walk upward)
 - Stop at security boundaries (home dir, filesystem boundary)
 - Allow explicit override via `--workspace`
@@ -261,5 +261,5 @@ Not in v1 scope, but documented for future reference:
 ## References
 
 - **Spec**: AGENTLIP_PLAN.md §4.2 (CLI daemon control)
-- **Bead**: bd-16d.1.11 (agentchatd status implementation)
+- **Bead**: bd-16d.1.11 (agentlipd status implementation)
 - **Related**: bd-16d.1.10 (GET /health endpoint) - implemented in packages/hub/src/index.ts

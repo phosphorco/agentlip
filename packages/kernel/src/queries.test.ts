@@ -1,5 +1,5 @@
 /**
- * Unit tests for @agentchat/kernel queries module
+ * Unit tests for @agentlip/kernel queries module
  * 
  * Tests bd-16d.2.3: canonical read query helpers
  */

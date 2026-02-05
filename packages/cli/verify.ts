@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Verification script for @agentchat/cli
+ * Verification script for @agentlip/cli
  * 
  * Checks:
  * 1. Library exports work correctly
@@ -15,14 +15,14 @@ import { Database } from "bun:sqlite";
 import { $ } from "bun";
 
 async function runVerification() {
-  console.log("🔍 Verifying @agentchat/cli...\n");
+  console.log("🔍 Verifying @agentlip/cli...\n");
 
   let tempDir: string | null = null;
   let passed = 0;
   let failed = 0;
 
   try {
-    tempDir = await mkdtemp(join(tmpdir(), "agentchat-verify-"));
+    tempDir = await mkdtemp(join(tmpdir(), "agentlip-verify-"));
 
     // Test 1: Library imports work
     console.log("1. Testing library imports...");
@@ -48,9 +48,9 @@ async function runVerification() {
 
     // Test 3: Create workspace and verify discovery
     console.log("3. Testing workspace discovery (with workspace)...");
-    const zulipDir = join(tempDir, ".zulip");
-    await mkdir(zulipDir, { recursive: true });
-    const dbPath = join(zulipDir, "db.sqlite3");
+    const agentlipDir = join(tempDir, ".agentlip");
+    await mkdir(agentlipDir, { recursive: true });
+    const dbPath = join(agentlipDir, "db.sqlite3");
 
     // Create a valid SQLite database with meta table
     const initDb = new Database(dbPath, { create: true });
@@ -109,7 +109,7 @@ async function runVerification() {
 
     // Test 7: CLI binary runs
     console.log("7. Testing CLI binary...");
-    const cliPath = join(import.meta.dir, "src", "agentchat.ts");
+    const cliPath = join(import.meta.dir, "src", "agentlip.ts");
     const result = await $`bun ${cliPath} doctor --workspace ${tempDir} --json`.quiet();
     const output = JSON.parse(result.stdout.toString());
     if (output.status === "ok" && output.db_id === "test-db-id-123") {

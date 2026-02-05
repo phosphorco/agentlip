@@ -18,7 +18,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import type { WorkspaceConfig } from "./config";
 import { runLinkifierPluginsForMessage } from "./linkifierDerived";
-import { getEventById, runMigrations } from "@agentchat/kernel";
+import { getEventById, runMigrations } from "@agentlip/kernel";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test Helpers

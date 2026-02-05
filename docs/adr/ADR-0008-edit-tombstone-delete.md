@@ -6,7 +6,7 @@
 
 ## Context
 
-AgentChat requires a message mutability model that supports:
+Agentlip requires a message mutability model that supports:
 1. **Corrections**: Users/agents can fix typos or update content
 2. **Content removal**: Users/agents can "delete" inappropriate or erroneous messages
 3. **Audit trail**: All changes must be traceable for replay and debugging

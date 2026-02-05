@@ -7,7 +7,7 @@
 
 ## Overview
 
-This test suite verifies critical WebSocket delivery guarantees for the AgentChat Hub. These tests ensure that clients can reliably reconnect, resume from disconnections, and receive a complete event stream without gaps or duplicates.
+This test suite verifies critical WebSocket delivery guarantees for the Agentlip Hub. These tests ensure that clients can reliably reconnect, resume from disconnections, and receive a complete event stream without gaps or duplicates.
 
 ## Test Scenarios
 

@@ -16,7 +16,7 @@ let testRoot: string;
 
 beforeEach(async () => {
   // Create a unique test directory
-  testRoot = join(tmpdir(), `agentchat-workspace-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  testRoot = join(tmpdir(), `agentlip-workspace-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   await fs.mkdir(testRoot, { recursive: true });
 });
 
@@ -31,8 +31,8 @@ afterEach(async () => {
 
 describe('discoverWorkspaceRoot', () => {
   test('finds workspace in current directory', async () => {
-    // Setup: create .zulip/db.sqlite3 in testRoot
-    const workspaceDir = join(testRoot, '.zulip');
+    // Setup: create .agentlip/db.sqlite3 in testRoot
+    const workspaceDir = join(testRoot, '.agentlip');
     const dbPath = join(workspaceDir, 'db.sqlite3');
     await fs.mkdir(workspaceDir);
     await fs.writeFile(dbPath, '');
@@ -49,7 +49,7 @@ describe('discoverWorkspaceRoot', () => {
   
   test('finds workspace in parent directory', async () => {
     // Setup: create workspace in testRoot
-    const workspaceDir = join(testRoot, '.zulip');
+    const workspaceDir = join(testRoot, '.agentlip');
     const dbPath = join(workspaceDir, 'db.sqlite3');
     await fs.mkdir(workspaceDir);
     await fs.writeFile(dbPath, '');
@@ -69,7 +69,7 @@ describe('discoverWorkspaceRoot', () => {
   });
   
   test('returns null when no workspace found', async () => {
-    // No .zulip created - should return null
+    // No .agentlip created - should return null
     const result = await discoverWorkspaceRoot(testRoot);
     
     expect(result).toBeNull();
@@ -92,7 +92,7 @@ describe('ensureWorkspaceInitialized', () => {
     expect(result.created).toBe(true);
     
     // Verify files exist
-    const workspaceDir = join(testRoot, '.zulip');
+    const workspaceDir = join(testRoot, '.agentlip');
     const dbPath = join(workspaceDir, 'db.sqlite3');
     
     // fs.access resolves on success, rejects on failure
@@ -124,8 +124,8 @@ describe('ensureWorkspaceInitialized', () => {
   });
   
   test('handles existing directory gracefully', async () => {
-    // Pre-create .zulip directory
-    const workspaceDir = join(testRoot, '.zulip');
+    // Pre-create .agentlip directory
+    const workspaceDir = join(testRoot, '.agentlip');
     await fs.mkdir(workspaceDir);
     
     // Should still create db.sqlite3
@@ -140,7 +140,7 @@ describe('ensureWorkspaceInitialized', () => {
 describe('discoverOrInitWorkspace', () => {
   test('discovers existing workspace', async () => {
     // Setup workspace
-    const workspaceDir = join(testRoot, '.zulip');
+    const workspaceDir = join(testRoot, '.agentlip');
     const dbPath = join(workspaceDir, 'db.sqlite3');
     await fs.mkdir(workspaceDir);
     await fs.writeFile(dbPath, '');
@@ -161,13 +161,13 @@ describe('discoverOrInitWorkspace', () => {
     expect(result.discovered).toBe(false);
     
     // Verify workspace was created
-    const dbPath = join(testRoot, '.zulip', 'db.sqlite3');
+    const dbPath = join(testRoot, '.agentlip', 'db.sqlite3');
     await fs.access(dbPath);
   });
   
   test('discovers workspace in parent instead of initializing', async () => {
     // Create workspace in testRoot
-    const workspaceDir = join(testRoot, '.zulip');
+    const workspaceDir = join(testRoot, '.agentlip');
     const dbPath = join(workspaceDir, 'db.sqlite3');
     await fs.mkdir(workspaceDir);
     await fs.writeFile(dbPath, '');
@@ -183,7 +183,7 @@ describe('discoverOrInitWorkspace', () => {
     expect(result.discovered).toBe(true);
     
     // Verify no workspace created in subdir
-    const subdirWorkspace = join(subdir, '.zulip');
+    const subdirWorkspace = join(subdir, '.agentlip');
     await expect(fs.access(subdirWorkspace)).rejects.toThrow();
   });
 });

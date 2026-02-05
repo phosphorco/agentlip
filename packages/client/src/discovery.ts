@@ -1,16 +1,16 @@
 /**
- * Workspace discovery helpers - re-exported from @agentchat/workspace
+ * Workspace discovery helpers - re-exported from @agentlip/workspace
  * 
- * Provides workspace root discovery and initialization for AgentChat clients.
+ * Provides workspace root discovery and initialization for Agentlip clients.
  */
 
 export {
   discoverWorkspaceRoot,
   ensureWorkspaceInitialized,
   discoverOrInitWorkspace,
-} from "@agentchat/workspace";
+} from "@agentlip/workspace";
 
 export type {
   WorkspaceDiscoveryResult,
   WorkspaceInitResult,
-} from "@agentchat/workspace";
+} from "@agentlip/workspace";

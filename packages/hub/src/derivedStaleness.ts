@@ -1,5 +1,5 @@
 /**
- * Derived job staleness guard for @agentchat/hub
+ * Derived job staleness guard for @agentlip/hub
  * 
  * Implements bd-16d.4.7 (staleness guard) per AGENTLIP_PLAN.md §4.6.
  * 
@@ -23,8 +23,8 @@
  * 
  * Usage Example (plugin or derived job):
  * ```typescript
- * import { getMessageById } from "@agentchat/kernel";
- * import { withMessageStalenessGuard, captureSnapshot } from "@agentchat/hub/src/derivedStaleness";
+ * import { getMessageById } from "@agentlip/kernel";
+ * import { withMessageStalenessGuard, captureSnapshot } from "@agentlip/hub/src/derivedStaleness";
  * 
  * // 1. Read message and capture snapshot
  * const message = getMessageById(db, messageId);

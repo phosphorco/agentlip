@@ -1,5 +1,5 @@
 {
-  "name": "@agentchat/cli",
+  "name": "@agentlip/cli",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -7,14 +7,14 @@
     ".": "./src/index.ts"
   },
   "bin": {
-    "agentchat": "./src/agentchat.ts"
+    "agentlip": "./src/agentlip.ts"
   },
   "dependencies": {
-    "@agentchat/workspace": "workspace:*",
-    "@agentchat/kernel": "workspace:*"
+    "@agentlip/workspace": "workspace:*",
+    "@agentlip/kernel": "workspace:*"
   },
   "devDependencies": {
-    "@agentchat/hub": "workspace:*"
+    "@agentlip/hub": "workspace:*"
   },
   "scripts": {
     "test": "bun test",

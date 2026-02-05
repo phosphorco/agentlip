@@ -1,4 +1,4 @@
-# AgentChat Local Hub
+# Agentlip Local Hub
 
 Local-first coordination hub for AI agents. SQLite-backed, single-machine, localhost-only.
 
@@ -16,20 +16,20 @@ bun run typecheck     # tsc --noEmit
 
 | Package | Purpose |
 |---------|---------|
-| `@agentchat/kernel` | SQLite schema, migrations, events, queries, mutations |
-| `@agentchat/hub` | Bun HTTP+WS server, plugin runtime, UI |
-| `@agentchat/cli` | Stateless CLI (`agentchat`) — reads DB, writes via hub |
-| `@agentchat/client` | TypeScript SDK — discovery, WS streaming, typed events, HTTP mutations |
-| `@agentchat/protocol` | Shared types (error codes, health response, protocol version) |
-| `@agentchat/workspace` | Workspace discovery (`.zulip/` upward walk with security boundary) |
+| `@agentlip/kernel` | SQLite schema, migrations, events, queries, mutations |
+| `@agentlip/hub` | Bun HTTP+WS server, plugin runtime, UI |
+| `@agentlip/cli` | Stateless CLI (`agentlip`) — reads DB, writes via hub |
+| `@agentlip/client` | TypeScript SDK — discovery, WS streaming, typed events, HTTP mutations |
+| `@agentlip/protocol` | Shared types (error codes, health response, protocol version) |
+| `@agentlip/workspace` | Workspace discovery (`.agentlip/` upward walk with security boundary) |
 
 ## Architecture
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│  .zulip/db.sqlite3  (WAL mode, single writer)        │
-│  .zulip/server.json (port, auth token, mode 0600)    │
-│  .zulip/locks/writer.lock                             │
+│  .agentlip/db.sqlite3  (WAL mode, single writer)        │
+│  .agentlip/server.json (port, auth token, mode 0600)    │
+│  .agentlip/locks/writer.lock                             │
 └──────────┬───────────────────────────┬───────────────┘
            │                           │
     ┌──────┴──────┐             ┌──────┴──────┐
@@ -56,7 +56,7 @@ bun test packages/client      # SDK discovery, WS, events, mutations, Gate F
 bun test packages/cli/src     # CLI commands, listen, doctor
 
 # With FTS enabled
-AGENTCHAT_ENABLE_FTS=1 bun test
+AGENTLIP_ENABLE_FTS=1 bun test
 
 # Typecheck
 bun run typecheck
@@ -85,7 +85,7 @@ import {
   sendMessage,
   isMessageCreated,
   type HubHttpClient,
-} from '@agentchat/client';
+} from '@agentlip/client';
 
 const hub = await discoverAndValidateHub();
 const client: HubHttpClient = {

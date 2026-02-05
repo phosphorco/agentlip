@@ -11,12 +11,12 @@
  * This script runs in a Bun Worker thread (isolated from hub process).
  * 
  * ISOLATION GUARANTEES (bd-16d.4.4):
- * - Filesystem guards block writes to .zulip/ directory (practical isolation)
+ * - Filesystem guards block writes to .agentlip/ directory (practical isolation)
  * - Plugins receive no workspace path context (path-blind execution)
  * 
  * LIMITATIONS (v1):
  * - Not cryptographic sandboxing (Bun Workers share process memory)
- * - Plugins can access network and non-.zulip filesystem
+ * - Plugins can access network and non-.agentlip filesystem
  * - Guards are best-effort (sophisticated plugins might bypass)
  * - Future: consider true sandboxing (subprocess, Deno, wasm)
  */
@@ -56,16 +56,16 @@ interface ExtractorPlugin {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Check if a path targets .zulip/ directory (or any .zulip ancestor).
+ * Check if a path targets .agentlip/ directory (or any .agentlip ancestor).
  * Returns true if path should be blocked.
  */
-function isZulipPath(targetPath: string): boolean {
+function isAgentlipPath(targetPath: string): boolean {
   try {
     const normalized = normalize(resolve(targetPath));
     const parts = normalized.split(sep);
     
-    // Check if any path component is exactly '.zulip'
-    return parts.includes(".zulip");
+    // Check if any path component is exactly '.agentlip'
+    return parts.includes(".agentlip");
   } catch {
     // If path resolution fails, be conservative and block
     return true;
@@ -73,7 +73,7 @@ function isZulipPath(targetPath: string): boolean {
 }
 
 /**
- * Wrap filesystem write operations to block .zulip/ access.
+ * Wrap filesystem write operations to block .agentlip/ access.
  * This is practical isolation, not cryptographic sandboxing.
  */
 function installFilesystemGuards(): void {
@@ -96,11 +96,11 @@ function installFilesystemGuards(): void {
   const originalUnlinkSync = fsSync.unlinkSync;
   const originalOpenSync = fsSync.openSync;
 
-  const blockMessage = "Plugin isolation violation: write access to .zulip/ directory is forbidden";
+  const blockMessage = "Plugin isolation violation: write access to .agentlip/ directory is forbidden";
 
   // @ts-ignore - intentionally overriding
   fs.writeFile = async function (path: any, data: any, options?: any) {
-    if (isZulipPath(String(path))) {
+    if (isAgentlipPath(String(path))) {
       throw new Error(blockMessage);
     }
     return originalWriteFile.call(this, path, data, options);
@@ -108,7 +108,7 @@ function installFilesystemGuards(): void {
 
   // @ts-ignore
   fs.appendFile = async function (path: any, data: any, options?: any) {
-    if (isZulipPath(String(path))) {
+    if (isAgentlipPath(String(path))) {
       throw new Error(blockMessage);
     }
     return originalAppendFile.call(this, path, data, options);
@@ -116,7 +116,7 @@ function installFilesystemGuards(): void {
 
   // @ts-ignore
   fs.mkdir = async function (path: any, options?: any) {
-    if (isZulipPath(String(path))) {
+    if (isAgentlipPath(String(path))) {
       throw new Error(blockMessage);
     }
     return originalMkdir.call(this, path, options);
@@ -124,7 +124,7 @@ function installFilesystemGuards(): void {
 
   // @ts-ignore
   fs.rm = async function (path: any, options?: any) {
-    if (isZulipPath(String(path))) {
+    if (isAgentlipPath(String(path))) {
       throw new Error(blockMessage);
     }
     return originalRm.call(this, path, options);
@@ -132,7 +132,7 @@ function installFilesystemGuards(): void {
 
   // @ts-ignore - runtime filesystem guard
   fs.rmdir = async function (path: any, options?: any) {
-    if (isZulipPath(String(path))) {
+    if (isAgentlipPath(String(path))) {
       throw new Error(blockMessage);
     }
     // @ts-ignore - dynamic override
@@ -141,7 +141,7 @@ function installFilesystemGuards(): void {
 
   // @ts-ignore
   fs.unlink = async function (path: any) {
-    if (isZulipPath(String(path))) {
+    if (isAgentlipPath(String(path))) {
       throw new Error(blockMessage);
     }
     return originalUnlink.call(this, path);
@@ -153,7 +153,7 @@ function installFilesystemGuards(): void {
     const flagsStr = String(flags || "r");
     const isWrite = /[wa+]/.test(flagsStr) || flags === 1 || flags === 2 || flags === 3;
     
-    if (isWrite && isZulipPath(String(path))) {
+    if (isWrite && isAgentlipPath(String(path))) {
       throw new Error(blockMessage);
     }
     return originalOpen.call(this, path, flags, ...args);
@@ -161,42 +161,42 @@ function installFilesystemGuards(): void {
 
   // Sync API guards
   fsSync.writeFileSync = function (path: any, data: any, options?: any) {
-    if (isZulipPath(String(path))) {
+    if (isAgentlipPath(String(path))) {
       throw new Error(blockMessage);
     }
     return originalWriteFileSync.call(this, path, data, options);
   };
 
   fsSync.appendFileSync = function (path: any, data: any, options?: any) {
-    if (isZulipPath(String(path))) {
+    if (isAgentlipPath(String(path))) {
       throw new Error(blockMessage);
     }
     return originalAppendFileSync.call(this, path, data, options);
   };
 
   fsSync.mkdirSync = function (path: any, options?: any) {
-    if (isZulipPath(String(path))) {
+    if (isAgentlipPath(String(path))) {
       throw new Error(blockMessage);
     }
     return originalMkdirSync.call(this, path, options);
   };
 
   fsSync.rmSync = function (path: any, options?: any) {
-    if (isZulipPath(String(path))) {
+    if (isAgentlipPath(String(path))) {
       throw new Error(blockMessage);
     }
     return originalRmSync.call(this, path, options);
   };
 
   fsSync.rmdirSync = function (path: any, options?: any) {
-    if (isZulipPath(String(path))) {
+    if (isAgentlipPath(String(path))) {
       throw new Error(blockMessage);
     }
     return originalRmdirSync.call(this, path, options);
   };
 
   fsSync.unlinkSync = function (path: any) {
-    if (isZulipPath(String(path))) {
+    if (isAgentlipPath(String(path))) {
       throw new Error(blockMessage);
     }
     return originalUnlinkSync.call(this, path);
@@ -206,7 +206,7 @@ function installFilesystemGuards(): void {
     const flagsStr = String(flags || "r");
     const isWrite = /[wa+]/.test(flagsStr) || flags === 1 || flags === 2 || flags === 3;
     
-    if (isWrite && isZulipPath(String(path))) {
+    if (isWrite && isAgentlipPath(String(path))) {
       throw new Error(blockMessage);
     }
     return originalOpenSync.call(this, path, flags, ...args);

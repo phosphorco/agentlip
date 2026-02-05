@@ -1,9 +1,9 @@
 /**
- * @agentchat/workspace - Workspace discovery + initialization
+ * @agentlip/workspace - Workspace discovery + initialization
  * 
  * Provides upward workspace discovery with security boundaries:
  * - Starts at cwd (or provided path)
- * - Walks upward until .zulip/db.sqlite3 exists
+ * - Walks upward until .agentlip/db.sqlite3 exists
  * - Stops at filesystem boundary OR user home directory
  * - Initializes workspace at starting directory if not found
  */
@@ -12,7 +12,7 @@ import { promises as fs } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { homedir } from 'node:os';
 
-const WORKSPACE_MARKER = '.zulip';
+const WORKSPACE_MARKER = '.agentlip';
 const DB_FILENAME = 'db.sqlite3';
 
 /**
@@ -62,7 +62,7 @@ export async function discoverWorkspaceRoot(
   let current = start;
   
   while (true) {
-    // Check if .zulip/db.sqlite3 exists at current level
+    // Check if .agentlip/db.sqlite3 exists at current level
     const workspaceDir = join(current, WORKSPACE_MARKER);
     const dbPath = join(workspaceDir, DB_FILENAME);
     
@@ -109,7 +109,7 @@ export async function discoverWorkspaceRoot(
 
 /**
  * Ensure workspace is initialized at workspaceRoot.
- * Creates .zulip/ directory and empty db.sqlite3 file if they don't exist.
+ * Creates .agentlip/ directory and empty db.sqlite3 file if they don't exist.
  * 
  * @param workspaceRoot - Directory to initialize workspace in
  * @returns Init result indicating whether workspace was newly created
@@ -132,7 +132,7 @@ export async function ensureWorkspaceInitialized(
     // Need to initialize
   }
   
-  // Create .zulip directory with mode 0700 (owner rwx only)
+  // Create .agentlip directory with mode 0700 (owner rwx only)
   try {
     await fs.mkdir(workspaceDir, { mode: 0o700, recursive: true });
   } catch (err: any) {

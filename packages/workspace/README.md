@@ -1,10 +1,10 @@
-# @agentchat/workspace
+# @agentlip/workspace
 
-Workspace discovery and initialization for AgentChat.
+Workspace discovery and initialization for Agentlip.
 
 ## Overview
 
-This package provides workspace discovery by walking upward from the current directory to find a `.zulip/db.sqlite3` marker. If no workspace is found within security boundaries, it can initialize a new workspace.
+This package provides workspace discovery by walking upward from the current directory to find a `.agentlip/db.sqlite3` marker. If no workspace is found within security boundaries, it can initialize a new workspace.
 
 ## Security Boundaries
 
@@ -28,7 +28,7 @@ Discover workspace root by walking upward from `startPath` (defaults to `cwd`).
 **Returns:** `WorkspaceDiscoveryResult | null`
 
 - Returns `null` if no workspace found within security boundaries
-- Returns discovery result if `.zulip/db.sqlite3` exists in current or parent directory
+- Returns discovery result if `.agentlip/db.sqlite3` exists in current or parent directory
 
 ```typescript
 const result = await discoverWorkspaceRoot();
@@ -45,7 +45,7 @@ Ensure workspace is initialized at the given directory.
 **Returns:** `WorkspaceInitResult`
 
 Creates:
-- `.zulip/` directory with mode `0700` (owner rwx only)
+- `.agentlip/` directory with mode `0700` (owner rwx only)
 - `db.sqlite3` file with mode `0600` (owner rw only)
 
 Idempotent - safe to call multiple times.

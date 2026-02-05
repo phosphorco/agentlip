@@ -15,7 +15,7 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { unlinkSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Database } from "bun:sqlite";
-import { openDb, runMigrations, insertEvent } from "@agentchat/kernel";
+import { openDb, runMigrations, insertEvent } from "@agentlip/kernel";
 import { createWsHub, createWsHandlers } from "./wsEndpoint";
 import { generateAuthToken } from "./authToken";
 

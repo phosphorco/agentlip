@@ -7,7 +7,7 @@
 Implemented three main functions:
 
 1. **`discoverWorkspaceRoot(startPath?: string)`**
-   - Walks upward from startPath (or cwd) to find `.zulip/db.sqlite3`
+   - Walks upward from startPath (or cwd) to find `.agentlip/db.sqlite3`
    - Enforces security boundaries:
      - Stops at filesystem boundary (device ID change)
      - Stops at user home directory
@@ -15,7 +15,7 @@ Implemented three main functions:
    - Returns `null` if no workspace found within boundaries
 
 2. **`ensureWorkspaceInitialized(workspaceRoot: string)`**
-   - Creates `.zulip/` directory with mode `0700` (owner rwx only)
+   - Creates `.agentlip/` directory with mode `0700` (owner rwx only)
    - Creates empty `db.sqlite3` with mode `0600` (owner rw only)
    - Idempotent - safe to call multiple times
    - Returns metadata indicating if workspace was newly created
@@ -89,11 +89,11 @@ bun verify.ts
 bun --eval "import { discoverWorkspaceRoot } from './packages/workspace/src/index.ts'; console.log(await discoverWorkspaceRoot())"
 
 # Test initialization in a test directory
-mkdir -p /tmp/agentchat-test
-cd /tmp/agentchat-test
+mkdir -p /tmp/agentlip-test
+cd /tmp/agentlip-test
 bun --eval "import { discoverOrInitWorkspace } from '${OLDPWD}/packages/workspace/src/index.ts'; console.log(await discoverOrInitWorkspace())"
-ls -la .zulip/
-# Expected: .zulip/ directory with db.sqlite3 file, correct permissions
+ls -la .agentlip/
+# Expected: .agentlip/ directory with db.sqlite3 file, correct permissions
 ```
 
 ## Notes
@@ -111,9 +111,9 @@ This package only creates the empty `db.sqlite3` file. Schema application (SQL i
 
 ### Future Enhancements
 Per plan, this is phase 0 foundation. Future work may include:
-- `zulip.config.ts` loading (with trust boundary validation)
+- `agentlip.config.ts` loading (with trust boundary validation)
 - `server.json` handling
-- Lock file management (`.zulip/locks/writer.lock`)
+- Lock file management (`.agentlip/locks/writer.lock`)
 - Config validation and schema versioning
 
 ## Remaining Work
@@ -125,7 +125,7 @@ This bead is complete and ready for review. All deliverables implemented, tested
 ### Integration Points (for dependent beads)
 
 Other beads can now:
-- Import workspace discovery functions from `@agentchat/workspace`
+- Import workspace discovery functions from `@agentlip/workspace`
 - Use `discoverOrInitWorkspace()` at CLI/daemon startup
 - Rely on security boundaries being enforced
 - Trust that workspace initialization creates correct directory structure

@@ -1,6 +1,6 @@
 # Plugin Runtime Integration Guide
 
-This document describes how to integrate the Worker-based plugin runtime harness (bd-16d.4.3) with the AgentChat hub.
+This document describes how to integrate the Worker-based plugin runtime harness (bd-16d.4.3) with the Agentlip hub.
 
 ## Architecture Overview
 
@@ -112,7 +112,7 @@ if (current.content_raw !== originalContent || current.deleted_at !== null) {
 
 ### 4. Plugin Configuration Loading (Future: bd-16d.4.2)
 
-Load plugin configuration from `zulip.config.ts`:
+Load plugin configuration from `agentlip.config.ts`:
 
 ```typescript
 interface PluginConfig {
@@ -159,7 +159,7 @@ See `pluginRuntime.test.ts` for comprehensive test coverage:
 ## Security Notes
 
 - **v1 limitation**: Plugins CAN access network and filesystem (Worker limitations)
-- **No write access to `.zulip/`**: Enforced by file permissions (future: bd-16d.4.4)
+- **No write access to `.agentlip/`**: Enforced by file permissions (future: bd-16d.4.4)
 - **Timeout bounds hangs**: Even infinite loops are terminated
 - **Circuit breaker prevents cascade**: Broken plugins don't block hub
 

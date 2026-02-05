@@ -6,7 +6,7 @@
 
 ## Context
 
-AgentChat provides real-time event streaming via WebSocket connections. When clients disconnect and reconnect, they need to resume from their last processed event without missing or duplicating events. This requires a well-defined **replay boundary** that separates historical events (replay) from live events (streaming).
+Agentlip provides real-time event streaming via WebSocket connections. When clients disconnect and reconnect, they need to resume from their last processed event without missing or duplicating events. This requires a well-defined **replay boundary** that separates historical events (replay) from live events (streaming).
 
 Without a clear boundary, race conditions can occur:
 - Events inserted during replay might be included in replay AND live stream (duplicates)

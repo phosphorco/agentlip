@@ -2,7 +2,7 @@
  * Workspace config loader and schema validation
  * 
  * Security requirements:
- * - Only load zulip.config.ts from workspace root (never traverse upward)
+ * - Only load agentlip.config.ts from workspace root (never traverse upward)
  * - Validate plugin module paths to prevent path traversal
  * - Return null for missing config (optional file)
  */
@@ -223,7 +223,7 @@ export function validateWorkspaceConfig(
 }
 
 /**
- * Load and validate workspace config from zulip.config.ts.
+ * Load and validate workspace config from agentlip.config.ts.
  * 
  * Security guarantees:
  * - Only loads from workspace root (never traverses upward)
@@ -238,7 +238,7 @@ export async function loadWorkspaceConfig(
   workspaceRoot: string
 ): Promise<LoadConfigResult | null> {
   const absWorkspaceRoot = resolve(workspaceRoot);
-  const configPath = join(absWorkspaceRoot, "zulip.config.ts");
+  const configPath = join(absWorkspaceRoot, "agentlip.config.ts");
   
   // Convert to file:// URL for dynamic import
   const configUrl = pathToFileURL(configPath).href;
@@ -253,14 +253,14 @@ export async function loadWorkspaceConfig(
     }
     
     // Config exists but has errors - propagate
-    throw new Error(`Failed to load zulip.config.ts: ${err.message}`);
+    throw new Error(`Failed to load agentlip.config.ts: ${err.message}`);
   }
   
   // Extract default export
   const config = (configModule as any)?.default;
   
   if (config === undefined) {
-    throw new Error("zulip.config.ts must have a default export");
+    throw new Error("agentlip.config.ts must have a default export");
   }
   
   // Validate config schema

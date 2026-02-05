@@ -1,5 +1,5 @@
 /**
- * AgentChat Hub UI handler
+ * Agentlip Hub UI handler
  * 
  * Minimal HTML UI served at /ui/* routes with:
  * - Channel list (/ui)
@@ -61,7 +61,7 @@ function renderChannelsListPage(ctx: UiContext): Response {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AgentChat - Channels</title>
+  <title>Agentlip - Channels</title>
   <style>${getCommonStyles()}</style>
 </head>
 <body>
@@ -151,7 +151,7 @@ function renderTopicsListPage(ctx: UiContext, channelId: string): Response {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AgentChat - Topics</title>
+  <title>Agentlip - Topics</title>
   <style>${getCommonStyles()}</style>
 </head>
 <body>
@@ -261,7 +261,7 @@ function renderTopicMessagesPage(ctx: UiContext, topicId: string): Response {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AgentChat - Messages</title>
+  <title>Agentlip - Messages</title>
   <style>${getCommonStyles()}
     .layout {
       display: flex;

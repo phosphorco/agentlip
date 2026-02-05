@@ -161,10 +161,10 @@ The following tests from AGENTLIP_PLAN.md are **deferred** due to CI/environment
 
 **Mitigation:**
 - SQLite has built-in corruption detection (SQLITE_CORRUPT error)
-- `agentchat doctor` could check `PRAGMA integrity_check`
+- `agentlip doctor` could check `PRAGMA integrity_check`
 
 **Future work:**
-- Add `agentchat doctor --check-integrity` command
+- Add `agentlip doctor --check-integrity` command
 - Add hub startup integrity check (fail-fast if DB is corrupt)
 - Consider adding periodic integrity checks in production
 
@@ -199,10 +199,10 @@ The following tests from AGENTLIP_PLAN.md are **deferred** due to CI/environment
 **Mitigation:**
 - Hub logs checkpoint failures during shutdown
 - WAL can grow unbounded if checkpoints fail (monitor WAL size in production)
-- `agentchat doctor` could warn if WAL is too large
+- `agentlip doctor` could warn if WAL is too large
 
 **Future work:**
-- Add `agentchat doctor --checkpoint` command to force checkpoint
+- Add `agentlip doctor --checkpoint` command to force checkpoint
 - Add hub metric/log for WAL size
 - Add automated WAL size monitoring
 
@@ -261,7 +261,7 @@ Based on this test suite, we recommend:
 
 1. **Monitor WAL file size** in production (alert if >100MB)
 2. **Add periodic integrity checks** (daily `PRAGMA integrity_check`)
-3. **Add `agentchat doctor` subcommands:**
+3. **Add `agentlip doctor` subcommands:**
    - `doctor --check-integrity` (run `PRAGMA integrity_check`)
    - `doctor --checkpoint` (force `PRAGMA wal_checkpoint(TRUNCATE)`)
    - `doctor --wal-info` (report WAL size and status)

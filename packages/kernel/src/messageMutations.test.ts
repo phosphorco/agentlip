@@ -1,5 +1,5 @@
 /**
- * Unit tests for @agentchat/kernel message mutations module
+ * Unit tests for @agentlip/kernel message mutations module
  * 
  * Tests bd-16d.2.6 (edit + tombstone delete) and bd-16d.2.8 (retopic)
  */

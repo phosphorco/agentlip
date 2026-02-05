@@ -1,5 +1,5 @@
 -- Migration: 0001_schema_v1.sql
--- Initial schema for AgentChat Local Hub v1
+-- Initial schema for Agentlip Local Hub v1
 -- From schema version: 0 (none)
 -- To schema version: 1
 

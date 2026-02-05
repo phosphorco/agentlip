@@ -75,7 +75,7 @@ Save the `channel.id` for next steps (e.g., `export CH_ID=ch_01HX5G3P2N8QZWJ4M1V
 
 ### Create Topics
 
-Topics are stable discussion threads within a channel (like Agentlip topics).
+Topics are stable discussion threads within a channel (like Zulip topics).
 
 ```bash
 # Create topic for architecture discussion

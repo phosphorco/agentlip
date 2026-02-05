@@ -2,7 +2,7 @@
 **Version:** v0.2 (plan checkpoint; incorporates locked decisions from discussion)
 **Scope:** local-only, workspace-scoped coordination substrate for AI coding agents
 **Primary deliverables:** SQLite schema + event log, Bun hub daemon (HTTP+WS), stateless CLI, TypeScript SDK, plugin isolation, minimal UI
-**Out of scope (v1):** multi-machine sync, accounts/permissions, Agentlip-style unread/reactions/emoji, rich renderer, internet-facing service
+**Out of scope (v1):** multi-machine sync, accounts/permissions, Zulip-style unread/reactions/emoji, rich renderer, internet-facing service
 
 ## How to use this plan
 1. Read **Part 0: Executive Blueprint** end-to-end—that's the contract
@@ -25,7 +25,7 @@ You're building a **local-first, durable coordination hub** for AI agents inside
 - **Extensible:** isolated TypeScript plugins for enrichment + extraction
 - **Offline/private:** localhost-bound, no internet dependency
 
-The "Agentlip-inspired" piece is the **channel/topic mental model**, with one decisive structural commitment:
+The "Zulip-inspired" piece is the **channel/topic mental model**, with one decisive structural commitment:
 
 > **Topics are first-class entities with stable IDs. Messages reference `topic_id`.**
 

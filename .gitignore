@@ -1,2 +1,19 @@
 # Local plan review snapshots
 .plan-improvement-rounds/
+
+# bv (beads viewer) local config and caches
+.bv/
+
+# Bun / Node
+node_modules/
+dist/
+*.log
+
+# Workspace runtime data
+.zulip/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+
+# OS
+.DS_Store

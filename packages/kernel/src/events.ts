@@ -60,6 +60,81 @@ export interface ReplayEventsOptions {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Event Scope Catalog
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Scope requirements for known v1 events.
+ * Unknown event names are allowed (for extensibility) and skip scope validation.
+ * 
+ * Implements bd-16d.2.10 (scope correctness) and bd-16d.2.11 (dev assertions).
+ */
+interface ScopeRequirements {
+  channel_id: boolean;  // true if channel_id is required
+  topic_id: boolean;    // true if topic_id is required
+  topic_id2: boolean;   // true if topic_id2 is required
+}
+
+const EVENT_SCOPE_CATALOG: Record<string, ScopeRequirements> = {
+  // Channel events: require channel_id only
+  "channel.created": { channel_id: true, topic_id: false, topic_id2: false },
+
+  // Topic events: require channel_id + topic_id
+  "topic.created": { channel_id: true, topic_id: true, topic_id2: false },
+  "topic.renamed": { channel_id: true, topic_id: true, topic_id2: false },
+  "topic.attachment_added": { channel_id: true, topic_id: true, topic_id2: false },
+
+  // Message events: require channel_id + topic_id (except moved_topic)
+  "message.created": { channel_id: true, topic_id: true, topic_id2: false },
+  "message.edited": { channel_id: true, topic_id: true, topic_id2: false },
+  "message.deleted": { channel_id: true, topic_id: true, topic_id2: false },
+  "message.enriched": { channel_id: true, topic_id: true, topic_id2: false },
+
+  // Message move: requires channel_id + topic_id (old) + topic_id2 (new)
+  "message.moved_topic": { channel_id: true, topic_id: true, topic_id2: true },
+};
+
+/**
+ * Validate event scopes against catalog requirements.
+ * 
+ * @param name - Event name
+ * @param scopes - Event scopes to validate
+ * @throws Error if required scopes are missing or invalid for known event types
+ */
+function validateEventScopes(name: string, scopes: EventScopes): void {
+  const requirements = EVENT_SCOPE_CATALOG[name];
+  
+  // Unknown event types are allowed (skip validation)
+  if (!requirements) {
+    return;
+  }
+
+  // Helper to check if a scope value is valid (present and non-empty)
+  const isValidScope = (value: string | null | undefined): value is string => {
+    return typeof value === "string" && value.trim().length > 0;
+  };
+
+  // Check each required scope
+  if (requirements.channel_id && !isValidScope(scopes.channel_id)) {
+    throw new Error(
+      `Event '${name}' requires scope.channel_id but it is missing or empty`
+    );
+  }
+
+  if (requirements.topic_id && !isValidScope(scopes.topic_id)) {
+    throw new Error(
+      `Event '${name}' requires scope.topic_id but it is missing or empty`
+    );
+  }
+
+  if (requirements.topic_id2 && !isValidScope(scopes.topic_id2)) {
+    throw new Error(
+      `Event '${name}' requires scope.topic_id2 but it is missing or empty`
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // insertEvent Helper
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -69,9 +144,12 @@ export interface ReplayEventsOptions {
  * Single entry point for all event insertions. Validates inputs and serializes
  * data deterministically. Never mutates existing events (schema triggers prevent).
  * 
+ * Enforces scope correctness per EVENT_SCOPE_CATALOG (bd-16d.2.10 + bd-16d.2.11).
+ * Unknown event names are allowed and skip scope validation.
+ * 
  * @param options - Event insertion options
  * @returns The inserted event_id (monotonically increasing)
- * @throws Error if name is empty, entity fields empty, or data is not a plain object
+ * @throws Error if name is empty, entity fields empty, data is not a plain object, or scopes are invalid
  */
 export function insertEvent(options: InsertEventOptions): number {
   const { db, name, scopes, entity, data } = options;
@@ -80,6 +158,9 @@ export function insertEvent(options: InsertEventOptions): number {
   if (!name || typeof name !== "string" || name.trim().length === 0) {
     throw new Error("Event name must be a non-empty string");
   }
+  
+  // Validate scopes (bd-16d.2.10 + bd-16d.2.11)
+  validateEventScopes(name, scopes);
   
   // Validate entity
   if (!entity.type || typeof entity.type !== "string" || entity.type.trim().length === 0) {

@@ -284,6 +284,342 @@ describe("insertEvent", () => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Event Scope Validation Tests (bd-16d.2.10 + bd-16d.2.11)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("insertEvent scope validation", () => {
+  test("channel.created: requires channel_id", () => {
+    const { db } = setupTestDb();
+
+    // Valid: channel_id provided
+    const eventId = insertEvent({
+      db,
+      name: "channel.created",
+      scopes: { channel_id: "ch_1" },
+      entity: { type: "channel", id: "ch_1" },
+      data: { channel: { id: "ch_1", name: "General" } },
+    });
+    expect(eventId).toBeGreaterThan(0);
+
+    // Invalid: missing channel_id
+    expect(() =>
+      insertEvent({
+        db,
+        name: "channel.created",
+        scopes: {},
+        entity: { type: "channel", id: "ch_2" },
+        data: {},
+      })
+    ).toThrow(/requires scope.channel_id/);
+
+    // Invalid: empty channel_id
+    expect(() =>
+      insertEvent({
+        db,
+        name: "channel.created",
+        scopes: { channel_id: "" },
+        entity: { type: "channel", id: "ch_3" },
+        data: {},
+      })
+    ).toThrow(/requires scope.channel_id but it is missing or empty/);
+
+    db.close();
+  });
+
+  test("topic.created: requires channel_id + topic_id", () => {
+    const { db } = setupTestDb();
+
+    // Valid: both scopes provided
+    const eventId = insertEvent({
+      db,
+      name: "topic.created",
+      scopes: { channel_id: "ch_1", topic_id: "topic_1" },
+      entity: { type: "topic", id: "topic_1" },
+      data: { topic: { id: "topic_1", title: "Test" } },
+    });
+    expect(eventId).toBeGreaterThan(0);
+
+    // Invalid: missing channel_id
+    expect(() =>
+      insertEvent({
+        db,
+        name: "topic.created",
+        scopes: { topic_id: "topic_2" },
+        entity: { type: "topic", id: "topic_2" },
+        data: {},
+      })
+    ).toThrow(/requires scope.channel_id/);
+
+    // Invalid: missing topic_id
+    expect(() =>
+      insertEvent({
+        db,
+        name: "topic.created",
+        scopes: { channel_id: "ch_1" },
+        entity: { type: "topic", id: "topic_3" },
+        data: {},
+      })
+    ).toThrow(/requires scope.topic_id/);
+
+    db.close();
+  });
+
+  test("topic.renamed: requires channel_id + topic_id", () => {
+    const { db } = setupTestDb();
+
+    // Valid
+    const eventId = insertEvent({
+      db,
+      name: "topic.renamed",
+      scopes: { channel_id: "ch_1", topic_id: "topic_1" },
+      entity: { type: "topic", id: "topic_1" },
+      data: { old_title: "Old", new_title: "New" },
+    });
+    expect(eventId).toBeGreaterThan(0);
+
+    // Invalid: missing scopes
+    expect(() =>
+      insertEvent({
+        db,
+        name: "topic.renamed",
+        scopes: {},
+        entity: { type: "topic", id: "topic_2" },
+        data: {},
+      })
+    ).toThrow(/requires scope/);
+
+    db.close();
+  });
+
+  test("topic.attachment_added: requires channel_id + topic_id", () => {
+    const { db } = setupTestDb();
+
+    // Valid
+    const eventId = insertEvent({
+      db,
+      name: "topic.attachment_added",
+      scopes: { channel_id: "ch_1", topic_id: "topic_1" },
+      entity: { type: "attachment", id: "attach_1" },
+      data: { attachment: { id: "attach_1" } },
+    });
+    expect(eventId).toBeGreaterThan(0);
+
+    // Invalid
+    expect(() =>
+      insertEvent({
+        db,
+        name: "topic.attachment_added",
+        scopes: { channel_id: "ch_1" },
+        entity: { type: "attachment", id: "attach_2" },
+        data: {},
+      })
+    ).toThrow(/requires scope.topic_id/);
+
+    db.close();
+  });
+
+  test("message.created: requires channel_id + topic_id", () => {
+    const { db } = setupTestDb();
+
+    // Valid
+    const eventId = insertEvent({
+      db,
+      name: "message.created",
+      scopes: { channel_id: "ch_1", topic_id: "topic_1" },
+      entity: { type: "message", id: "msg_1" },
+      data: { message: { id: "msg_1", content: "Hello" } },
+    });
+    expect(eventId).toBeGreaterThan(0);
+
+    // Invalid: missing topic_id
+    expect(() =>
+      insertEvent({
+        db,
+        name: "message.created",
+        scopes: { channel_id: "ch_1" },
+        entity: { type: "message", id: "msg_2" },
+        data: {},
+      })
+    ).toThrow(/requires scope.topic_id/);
+
+    db.close();
+  });
+
+  test("message.edited: requires channel_id + topic_id", () => {
+    const { db } = setupTestDb();
+
+    // Valid
+    const eventId = insertEvent({
+      db,
+      name: "message.edited",
+      scopes: { channel_id: "ch_1", topic_id: "topic_1" },
+      entity: { type: "message", id: "msg_1" },
+      data: { old_content: "Old", new_content: "New" },
+    });
+    expect(eventId).toBeGreaterThan(0);
+
+    // Invalid
+    expect(() =>
+      insertEvent({
+        db,
+        name: "message.edited",
+        scopes: {},
+        entity: { type: "message", id: "msg_2" },
+        data: {},
+      })
+    ).toThrow(/requires scope/);
+
+    db.close();
+  });
+
+  test("message.deleted: requires channel_id + topic_id", () => {
+    const { db } = setupTestDb();
+
+    // Valid
+    const eventId = insertEvent({
+      db,
+      name: "message.deleted",
+      scopes: { channel_id: "ch_1", topic_id: "topic_1" },
+      entity: { type: "message", id: "msg_1" },
+      data: { deleted_by: "admin" },
+    });
+    expect(eventId).toBeGreaterThan(0);
+
+    // Invalid
+    expect(() =>
+      insertEvent({
+        db,
+        name: "message.deleted",
+        scopes: { channel_id: "ch_1" },
+        entity: { type: "message", id: "msg_2" },
+        data: {},
+      })
+    ).toThrow(/requires scope.topic_id/);
+
+    db.close();
+  });
+
+  test("message.enriched: requires channel_id + topic_id", () => {
+    const { db } = setupTestDb();
+
+    // Valid
+    const eventId = insertEvent({
+      db,
+      name: "message.enriched",
+      scopes: { channel_id: "ch_1", topic_id: "topic_1" },
+      entity: { type: "message", id: "msg_1" },
+      data: { enrichments: [] },
+    });
+    expect(eventId).toBeGreaterThan(0);
+
+    // Invalid
+    expect(() =>
+      insertEvent({
+        db,
+        name: "message.enriched",
+        scopes: {},
+        entity: { type: "message", id: "msg_2" },
+        data: {},
+      })
+    ).toThrow(/requires scope/);
+
+    db.close();
+  });
+
+  test("message.moved_topic: requires channel_id + topic_id + topic_id2", () => {
+    const { db } = setupTestDb();
+
+    // Valid: all three scopes
+    const eventId = insertEvent({
+      db,
+      name: "message.moved_topic",
+      scopes: { channel_id: "ch_1", topic_id: "topic_old", topic_id2: "topic_new" },
+      entity: { type: "message", id: "msg_1" },
+      data: { old_topic_id: "topic_old", new_topic_id: "topic_new" },
+    });
+    expect(eventId).toBeGreaterThan(0);
+
+    // Invalid: missing topic_id2
+    expect(() =>
+      insertEvent({
+        db,
+        name: "message.moved_topic",
+        scopes: { channel_id: "ch_1", topic_id: "topic_old" },
+        entity: { type: "message", id: "msg_2" },
+        data: {},
+      })
+    ).toThrow(/requires scope.topic_id2/);
+
+    // Invalid: missing topic_id
+    expect(() =>
+      insertEvent({
+        db,
+        name: "message.moved_topic",
+        scopes: { channel_id: "ch_1", topic_id2: "topic_new" },
+        entity: { type: "message", id: "msg_3" },
+        data: {},
+      })
+    ).toThrow(/requires scope.topic_id/);
+
+    // Invalid: empty topic_id2
+    expect(() =>
+      insertEvent({
+        db,
+        name: "message.moved_topic",
+        scopes: { channel_id: "ch_1", topic_id: "topic_old", topic_id2: "" },
+        entity: { type: "message", id: "msg_4" },
+        data: {},
+      })
+    ).toThrow(/requires scope.topic_id2 but it is missing or empty/);
+
+    db.close();
+  });
+
+  test("unknown event names are allowed without scope validation", () => {
+    const { db } = setupTestDb();
+
+    // Unknown event types can have any scopes (or none)
+    const eventId1 = insertEvent({
+      db,
+      name: "custom.plugin.event",
+      scopes: {},
+      entity: { type: "custom", id: "1" },
+      data: { custom: true },
+    });
+    expect(eventId1).toBeGreaterThan(0);
+
+    // Unknown event with partial scopes
+    const eventId2 = insertEvent({
+      db,
+      name: "future.event.type",
+      scopes: { channel_id: "ch_1" },
+      entity: { type: "future", id: "2" },
+      data: {},
+    });
+    expect(eventId2).toBeGreaterThan(0);
+
+    db.close();
+  });
+
+  test("scope validation is always-on (not gated by env flag)", () => {
+    const { db } = setupTestDb();
+
+    // Validation happens regardless of NODE_ENV
+    expect(() =>
+      insertEvent({
+        db,
+        name: "message.created",
+        scopes: {},
+        entity: { type: "message", id: "msg_1" },
+        data: {},
+      })
+    ).toThrow(/requires scope/);
+
+    db.close();
+  });
+});
+
 describe("getLatestEventId", () => {
   test("returns 0 when no events exist", () => {
     const { db } = setupTestDb();

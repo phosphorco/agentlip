@@ -1,9 +1,13 @@
 // Bun hub daemon (HTTP + WS)
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 import type { Server } from "bun";
 import type { HealthResponse } from "@agentchat/protocol";
 import { PROTOCOL_VERSION } from "@agentchat/protocol";
+import { openDb, runMigrations } from "@agentchat/kernel";
 import { requireAuth, requireWsToken } from "./authMiddleware";
+import { handleApiV1, type ApiV1Context } from "./apiV1";
+import { createWsHub, createWsHandlers } from "./wsEndpoint";
 import {
   HubRateLimiter,
   rateLimitedResponse,
@@ -51,12 +55,29 @@ export {
   type JsonBodyResult,
 } from "./bodyParser";
 
+// Re-export HTTP API handler utilities
+export { handleApiV1, type ApiV1Context } from "./apiV1";
+
+// Re-export WS endpoint utilities
+export {
+  createWsHub,
+  createWsHandlers,
+  type WsHub,
+  type WsHandlers,
+} from "./wsEndpoint";
+
 export interface StartHubOptions {
   host?: string;
   port?: number;
   instanceId?: string;
   dbId?: string;
   schemaVersion?: number;
+  /** SQLite db file path. Defaults to in-memory (":memory:") for tests. */
+  dbPath?: string;
+  /** Directory containing SQL migrations (defaults to repo migrations/). */
+  migrationsDir?: string;
+  /** Enable optional FTS5 migration (opportunistic, non-fatal). */
+  enableFts?: boolean;
   allowUnsafeNetwork?: boolean;
   /** Auth token for mutation endpoints + WS. If not provided, mutations are rejected. */
   authToken?: string;
@@ -134,8 +155,11 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
     host = "127.0.0.1",
     port = 0, // 0 = random available port
     instanceId = randomUUID(),
-    dbId = "unknown", // Will be replaced with actual db_id from meta table in future tasks
-    schemaVersion = 0, // Will be replaced with actual schema version in future tasks
+    dbId,
+    schemaVersion,
+    dbPath = ":memory:",
+    migrationsDir,
+    enableFts = false,
     allowUnsafeNetwork = false,
     authToken,
     rateLimitPerClient,
@@ -145,7 +169,51 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
   
   // Validate localhost-only bind
   assertLocalhostBind(host, { allowUnsafeNetwork });
-  
+
+  // Open database (default: in-memory for tests) and apply migrations
+  const effectiveMigrationsDir =
+    migrationsDir ?? join(import.meta.dir, "../../../migrations");
+  const db = openDb({ dbPath });
+  try {
+    runMigrations({ db, migrationsDir: effectiveMigrationsDir, enableFts });
+  } catch (err) {
+    db.close();
+    throw err;
+  }
+
+  // Read meta values (used as defaults for /health if not explicitly provided)
+  const readMetaValue = (key: string): string | null => {
+    try {
+      const row = db
+        .query<{ value: string }, [string]>(
+          "SELECT value FROM meta WHERE key = ?"
+        )
+        .get(key);
+      return row?.value ?? null;
+    } catch {
+      return null;
+    }
+  };
+
+  const metaDbId = readMetaValue("db_id");
+  const metaSchemaVersion = (() => {
+    const raw = readMetaValue("schema_version");
+    if (!raw) return null;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) ? n : null;
+  })();
+
+  const effectiveDbId = dbId ?? metaDbId ?? "unknown";
+  const effectiveSchemaVersion = schemaVersion ?? metaSchemaVersion ?? 0;
+
+  // Initialize WS hub (used when /ws is upgraded)
+  const wsHub = createWsHub({ db, instanceId }) as any;
+  const wsHandlers = createWsHandlers({
+    db,
+    authToken: authToken ?? "",
+    hub: wsHub,
+  });
+
   // Track process start time for uptime calculation
   const startTimeMs = Date.now();
 
@@ -159,7 +227,7 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
     hostname: host,
     port,
 
-    async fetch(req): Promise<Response> {
+    fetch(req: Request, bunServer: any) {
       const url = new URL(req.url);
 
       // GET /health - unauthenticated health check (no rate limiting)
@@ -169,8 +237,8 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
         const healthResponse: HealthResponse = {
           status: "ok",
           instance_id: instanceId,
-          db_id: dbId,
-          schema_version: schemaVersion,
+          db_id: effectiveDbId,
+          schema_version: effectiveSchemaVersion,
           protocol_version: PROTOCOL_VERSION,
           pid: process.pid,
           uptime_seconds: uptimeSeconds,
@@ -178,6 +246,26 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
 
         return Response.json(healthResponse);
       }
+
+      // GET /ws - WebSocket upgrade endpoint
+      if (url.pathname === "/ws") {
+        if (!authToken) {
+          return new Response(
+            JSON.stringify({
+              error: "Service unavailable",
+              code: "NO_AUTH_CONFIGURED",
+            }),
+            {
+              status: 503,
+              headers: { "Content-Type": "application/json" },
+            }
+          );
+        }
+
+        return wsHandlers.upgrade(req, bunServer);
+      }
+
+      return (async () => {
 
       // Apply rate limiting to all non-health endpoints
       let rateLimitResult: { allowed: boolean; limit: number; remaining: number; resetAt: number } | null = null;
@@ -241,8 +329,46 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
         return withRateLimitHeaders(Response.json(responseBody));
       }
 
+      // /api/v1/* - HTTP API endpoints (channels/topics/messages/attachments/events)
+      if (url.pathname.startsWith("/api/v1/") && url.pathname !== "/api/v1/_ping") {
+        const method = req.method.toUpperCase();
+        const isMutation = method !== "GET" && method !== "HEAD";
+
+        // Hub started without auth token - reject all mutations
+        if (isMutation && !authToken) {
+          return withRateLimitHeaders(
+            new Response(
+              JSON.stringify({
+                error: "Service unavailable",
+                code: "NO_AUTH_CONFIGURED",
+              }),
+              { status: 503, headers: { "Content-Type": "application/json" } }
+            )
+          );
+        }
+
+        const apiCtx: ApiV1Context = {
+          db,
+          authToken: authToken ?? "",
+          instanceId,
+          onEventIds(eventIds) {
+            wsHub.publishEventIds(eventIds);
+          },
+        };
+
+        const apiResponse = await handleApiV1(req, apiCtx);
+        return withRateLimitHeaders(apiResponse);
+      }
+
       // 404 for all other routes
       return new Response("Not Found", { status: 404 });
+      })();
+    },
+
+    websocket: {
+      open: wsHandlers.open,
+      message: wsHandlers.message,
+      close: wsHandlers.close,
     },
   });
 
@@ -251,6 +377,7 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
   const boundHost = server.hostname;
   if (boundPort == null || boundHost == null) {
     await server.stop(true);
+    db.close();
     throw new Error(
       "Hub server must bind to hostname+port (unix sockets not supported)"
     );
@@ -263,8 +390,24 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
     host: boundHost,
 
     async stop() {
-      rateLimiter?.stopCleanup();
-      await server.stop(true);
+      try {
+        wsHub.closeAll?.();
+      } finally {
+        rateLimiter?.stopCleanup();
+
+        // Bun 1.3.x: Server.stop(true) can hang indefinitely after a WebSocket
+        // connection has been accepted (even if it was later closed). We still
+        // want to initiate shutdown, but we must not await forever.
+        const stopPromise = server.stop(true).catch(() => {
+          // Ignore stop errors during shutdown
+        });
+
+        // Wait a short, bounded amount of time for the server to stop.
+        // If it doesn't resolve, we proceed with cleanup anyway.
+        await Promise.race([stopPromise, Bun.sleep(250)]);
+
+        db.close();
+      }
     },
   };
 }

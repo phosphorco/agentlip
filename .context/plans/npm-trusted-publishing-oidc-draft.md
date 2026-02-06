@@ -3,119 +3,123 @@
 > Learnings relevant to future gates should be written back to respective gates, so future collaborators can benefit.
 
 ## Goal & Motivation
-
-Eliminate long-lived `NPM_TOKEN` secrets for publishes by using npm **Trusted Publishing** with **GitHub Actions OIDC**. Improves security posture (no reusable secret; short-lived, identity-bound publish credentials) and enables npm provenance.
+Replace long-lived `NPM_TOKEN` publishing secrets with npm **Trusted Publishing** via **GitHub Actions OIDC**, and enable npm **provenance**.
 
 ## Scope
-
 In-scope:
-- Update CI publish workflow to support npm Trusted Publishing (OIDC) and provenance.
-- Document/setup steps for npm org/repo/workflow trust configuration.
-- Keep current tag-driven release flow intact (`v*` tags publish).
-- Add a safe migration path (token-based fallback until trust is confirmed).
+- Switch CI publishing to an OIDC/provenance-compatible mechanism.
+- Update `.github/workflows/publish.yml` accordingly.
+- Document the required npm-side trusted publisher configuration.
+- Provide a temporary, explicit fallback to `NPM_TOKEN` during migration.
 
 Out-of-scope:
-- Reworking package build/distribution (repo is “ship TS source; Bun runtime”).
-- Changing release cadence/versioning strategy.
-- Adding self-hosted runners / IP allowlists.
+- Package build/distribution changes (repo ships TS source; Bun runtime).
+- Changing the tag-driven release process.
 
-Dependencies / external prerequisites:
-- npm org/scope `@agentlip` exists.
-- Maintainer has access to configure Trusted Publishing in npm.
-- GitHub repo is the canonical publish source (`phosphorco/agentlip`).
+Prereqs / constraints:
+- `@agentlip` scope exists and is controlled.
+- Maintainer can configure Trusted Publishing in npm.
 
 ## Codebase context
-
-Files (current state):
-- `.github/workflows/publish.yml` — tag-triggered publish, currently uses `bun publish` + `NPM_TOKEN`.
-- `.context/runbooks/first-publish-v0.1.0.md` — first publish runbook, currently token-based.
-- `README.md` — has a Publishing section (token-based).
-- `packages/*/package.json` — `files` arrays, `name`, `version` lockstep, no build step.
-
-Key constraints/unknowns to validate:
-- Whether **`bun publish`** can participate in npm Trusted Publishing (likely **no**; OIDC support is typically in `npm publish`).
-- Required npm CLI version/flags for OIDC + provenance (`npm publish --provenance`).
-- Whether npm Trusted Publishing can be configured per-org vs per-package for scoped + unscoped (`agentlip`) publish.
+- `.github/workflows/publish.yml` — current tag-triggered publish; today uses `bun publish` + `NPM_TOKEN`.
+- `.context/runbooks/first-publish-v0.1.0.md` — token-based first publish runbook.
+- `README.md` — Publishing section (token-based).
 
 ---
 
 ## Gates
 
-### Gate A — Verify feasibility + decide publish mechanism
-
+### Gate A — Confirm feasibility + lock in publish mechanism
 Deliverables:
-- A short decision note added to this plan: which CLI will publish in CI:
-  - Option 1: switch CI publish steps to `npm publish` (recommended)
-  - Option 2: keep `bun publish` and accept token-based auth only
+- Decision note (recorded in this plan):
+  - `bun publish` does **not** support npm Trusted Publishing / OIDC provenance (`--provenance`).
+  - CI publishing must use **`npm publish`**.
+  - Bun remains for install/test steps.
 
 Acceptance criteria:
-- Confirmed (via npm docs / npm CLI behavior) that GitHub OIDC Trusted Publishing works with chosen mechanism.
-- Confirmed flags needed for provenance and access (`--access public` for scoped packages).
+- We can publish from GitHub Actions without storing a reusable npm token.
 
-Pass/fail:
-- Pass if we can publish without storing `NPM_TOKEN` and workflow changes are straightforward.
 
-### Gate B — Update GitHub Actions workflow for OIDC (with safe fallback)
-
+### Gate B — Update GitHub Actions workflow for OIDC (keep token fallback temporarily)
 Deliverables:
-- `.github/workflows/publish.yml` updated to:
-  - request `permissions: { contents: read, id-token: write }`
-  - run publishes using the selected mechanism (likely `npm publish`)
-  - enable provenance (likely `--provenance`)
-  - include a temporary fallback path (env/conditional) for `NPM_TOKEN` while migrating (optional but recommended)
+- Update `.github/workflows/publish.yml`:
+  - Add job permissions:
+    - `contents: read`
+    - `id-token: write` (required for GitHub OIDC)
+  - Add `actions/setup-node@v4` (even if the repo uses Bun) with:
+    - `node-version: '20'` (or pinned LTS)
+    - `registry-url: 'https://registry.npmjs.org'` (**critical**: configures npm auth for OIDC token exchange)
+  - Replace publish steps (`bun publish`) with `npm publish`:
+    - Scoped packages: `npm publish --access public --provenance`
+    - Unscoped CLI (`agentlip`): `npm publish --provenance`
+  - Publish order and propagation delays stay the same:
+    `@agentlip/protocol → @agentlip/kernel → @agentlip/workspace → @agentlip/client → agentlip → @agentlip/hub`
+
+OIDC path notes:
+- Do **not** set `NODE_AUTH_TOKEN` for OIDC publishes; a preset token may override the OIDC flow.
+
+Temporary migration fallback (mutually exclusive with OIDC):
+- If OIDC isn’t configured correctly yet on npm:
+  - publish using token auth (`NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` or `~/.npmrc`)
+  - **omit `--provenance`** (provenance requires OIDC)
+- Remove this fallback in Gate E.
 
 Acceptance criteria:
 - Workflow remains tag-triggered on `v*`.
 - Version consistency check remains.
-- Publish order remains dependency-safe:
-  `@agentlip/protocol → @agentlip/kernel → @agentlip/workspace → @agentlip/client → agentlip (CLI) → @agentlip/hub`
 - No secrets printed.
 
-Verification:
-- Lint/parse YAML.
-- Dry-run reasoning: workflow should run on a tag without needing repository secrets when OIDC is configured.
 
-### Gate C — Configure npm Trusted Publishing (manual) and document it
-
+### Gate C — Configure npm Trusted Publishing (manual) + document
 Deliverables:
-- Runbook / docs updates describing the manual configuration:
-  - add “Trusted Publishing (OIDC)” section to `README.md`
-  - optionally a dedicated runbook: `.context/runbooks/npm-trusted-publishing.md`
-  - include exact values to enter (org, repo, workflow filename, environment if used)
+- Add docs (README section and/or `.context/runbooks/npm-trusted-publishing.md`) describing the exact npm UI steps.
+
+Manual checklist (must be done per-package; no org-wide toggle):
+- Configure Trusted Publishing for each:
+  - `@agentlip/protocol`
+  - `@agentlip/kernel`
+  - `@agentlip/workspace`
+  - `@agentlip/client`
+  - `@agentlip/hub`
+  - `agentlip`
+
+Details to document (per package):
+- Npm UI path: `https://www.npmjs.com/package/<name>/access`
+- “Trusted publishing” → link GitHub Actions publisher:
+  - Repo owner: `phosphorco`
+  - Repo name: `agentlip`
+  - Workflow filename: `publish.yml`
+  - (Optional) Environment name if releases require approvals
 
 Acceptance criteria:
-- Maintainer can follow docs without guesswork.
-- Docs clarify differences:
-  - scoped packages vs unscoped `agentlip`
-  - provenance expectations
-  - rollback plan (re-enable `NPM_TOKEN` secret)
+- Maintainer can follow the docs without guesswork.
+- Rollback path is documented (temporarily use `NPM_TOKEN` fallback).
 
-### Gate D — End-to-end publish rehearsal on a patch tag
 
+### Gate D — End-to-end rehearsal on a prerelease tag
 Deliverables:
-- A rehearsal release tag (e.g. `v0.1.1` or `v0.1.0+rehearsal` if allowed by policy) that triggers CI.
-- Confirmation that:
-  - CI publishes successfully using OIDC
-  - npm lists `repository`/provenance links as expected
-  - post-publish smoke test still passes
+- A rehearsal tag that triggers CI publishing, using prerelease semver (example: `v0.2.0-rc.1`).
 
 Acceptance criteria:
-- `npm view @agentlip/client version` returns the tag version.
-- Smoke test step succeeds.
+- CI publishes successfully via OIDC.
+- `npm view @agentlip/client version` returns the prerelease version.
+- Post-publish smoke test still passes.
+
+Notes:
+- npm ignores build metadata (`+...`); don’t use `0.1.0+rehearsal`.
+
 
 ### Gate E — Remove token-based publishing path
-
 Deliverables:
-- Remove `NPM_TOKEN` usage from workflow and docs.
-- Remove repository secret (manual).
+- Remove token fallback from workflow and docs.
+- Remove `NPM_TOKEN` GitHub secret (manual).
 
 Acceptance criteria:
-- Publish cannot proceed without OIDC trust configuration.
+- Publish requires OIDC Trusted Publishing to be configured.
 
 ---
 
 ## Risks / Notes
-
-- GitHub-hosted runners have non-static IPs; IP allowlisting is not a robust alternative.
-- Trusted Publishing + provenance requires npm CLI support; may require adding `actions/setup-node` (or ensuring npm version) even if we keep Bun for install/test.
-- If Trusted Publishing cannot support unscoped `agentlip` from the same workflow, we may need separate configuration or a separate workflow.
+- GitHub-hosted runners have non-static outbound IPs; IP allowlisting is not a robust approach.
+- `--provenance` requires npm >= 9.5.0. GitHub-hosted runners with Node 20 typically include npm 10.x; self-hosted runners must verify npm version.
+- If scoped vs unscoped packages require different Trusted Publishing configuration (unexpected), we may need to split workflows.

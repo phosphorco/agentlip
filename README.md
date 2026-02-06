@@ -107,6 +107,67 @@ for await (const event of conn.events()) {
 }
 ```
 
+## Publishing
+
+All packages require **Bun** runtime (not Node.js). Install via `bun add @agentlip/client` or run the CLI with `bunx @agentlip/cli`.
+
+### Prerequisites
+
+- npm account with access to the `@agentlip` scope
+- `NPM_TOKEN` (Automation type, publish-only scope) configured as a GitHub repository secret
+- Bun installed locally for version bumping
+
+### Release Process
+
+1. **Bump version** across all 6 packages:
+   ```bash
+   ./scripts/bump-version.sh 0.2.0
+   ```
+2. **Commit and tag:**
+   ```bash
+   git add -A && git commit -m 'release: v0.2.0'
+   git tag v0.2.0 && git push && git push --tags
+   ```
+3. **CI publishes** (`.github/workflows/publish.yml`):
+   - Runs typecheck + full test suite
+   - Verifies version consistency across all packages
+   - Publishes packages in dependency order: `protocol` → `kernel` → `workspace` → `client` → `cli` → `hub`
+   - Waits 5s between packages for npm propagation
+   - Post-publish smoke test: installs `@agentlip/client` and verifies import
+
+### Manual Publish (if CI fails)
+
+```bash
+npm set //registry.npmjs.org/:_authToken=$NPM_TOKEN
+
+for pkg in protocol kernel workspace client cli hub; do
+  cd packages/$pkg && bun publish --access public --no-git-checks && cd ../..
+  sleep 5
+done
+```
+
+### Recovery
+
+**Check published versions:**
+```bash
+for pkg in protocol kernel workspace client cli hub; do
+  echo "$pkg: $(npm view @agentlip/$pkg version)"
+done
+```
+
+**Resume from failed package:**  
+If `client` failed but `protocol`, `kernel`, `workspace` succeeded, resume:
+```bash
+cd packages/client && bun publish --access public --no-git-checks
+```
+
+**Unpublish bad version** (within 72 hours only):
+```bash
+npm unpublish @agentlip/<pkg>@<version>
+```
+
+After 72 hours, publish a patch version instead.
+
 ## Quality Gates
 
 All gates pass (verified in test suites):

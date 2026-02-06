@@ -10,7 +10,7 @@ cleanup() {
     done
   fi
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT ERR INT TERM
 
 # === Version determination (Craft-compatible) ===
 # Priority order:
@@ -49,8 +49,9 @@ else
 fi
 
 # === Semver validation ===
-if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?(\+[a-zA-Z0-9.]+)?$ ]]; then
-  echo "Error: '$VERSION' is not a valid semver version" >&2
+SEMVER_RE='^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'
+if ! [[ "$VERSION" =~ $SEMVER_RE ]]; then
+  echo "Error: invalid version '$VERSION' (expected semver)" >&2
   echo "Expected format: X.Y.Z or X.Y.Z-pre.N" >&2
   echo "Examples: 0.1.0, 1.2.3, 2.0.0-beta.1" >&2
   exit 1
@@ -78,7 +79,7 @@ for pkg in "${PACKAGES[@]}"; do
   
   if [[ "$CURRENT_VERSION" == "$VERSION" ]]; then
     echo "✓ $FILE already at $VERSION (skipped)"
-    ((SKIPPED++))
+    ((SKIPPED++)) || true
     continue
   fi
   
@@ -93,7 +94,7 @@ for pkg in "${PACKAGES[@]}"; do
   TEMP_FILES=("${TEMP_FILES[@]/$TEMP_FILE}")
   
   echo "✓ $FILE $CURRENT_VERSION → $VERSION"
-  ((UPDATED++))
+  ((UPDATED++)) || true
 done
 
 echo ""

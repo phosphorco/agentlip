@@ -69,8 +69,9 @@ if [[ -z "$REGISTRY" ]]; then
 fi
 
 # === Semver validation ===
-if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?(\+[a-zA-Z0-9.]+)?$ ]]; then
-  echo "Error: '$VERSION' is not a valid semver version" >&2
+SEMVER_RE='^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'
+if ! [[ "$VERSION" =~ $SEMVER_RE ]]; then
+  echo "Error: invalid version '$VERSION' (expected semver)" >&2
   echo "Expected format: X.Y.Z or X.Y.Z-pre.N" >&2
   echo "Examples: 0.1.0, 1.2.3, 2.0.0-beta.1" >&2
   exit 1
@@ -122,7 +123,7 @@ for pkg in "${PACKAGES[@]}"; do
   
   if [[ "$CURRENT_VERSION" != "$VERSION" ]]; then
     echo "✗ $FILE version is $CURRENT_VERSION (expected $VERSION)" >&2
-    ((MISMATCHES++))
+    ((MISMATCHES++)) || true
   else
     echo "✓ $FILE is at $VERSION"
   fi
@@ -156,7 +157,7 @@ for pkg in "${PACKAGES[@]}"; do
   # - Non-scoped (agentlip cli) defaults to public
   if (cd "$PKG_DIR" && bun publish --registry "$REGISTRY" --no-git-checks 2>&1); then
     echo "✓ $pkg published successfully"
-    ((PUBLISHED++))
+    ((PUBLISHED++)) || true
   else
     EXIT_CODE=$?
     echo "✗ $pkg failed to publish (exit code $EXIT_CODE)" >&2
@@ -169,7 +170,7 @@ for pkg in "${PACKAGES[@]}"; do
       echo "" >&2
     fi
     
-    ((FAILED++))
+    ((FAILED++)) || true
   fi
   
   echo ""
@@ -181,5 +182,5 @@ if [[ $FAILED -eq 0 ]]; then
   exit 0
 else
   echo "✗ Failed to publish $FAILED package(s)" >&2
-  exit 1
+  exit 2
 fi

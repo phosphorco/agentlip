@@ -62,6 +62,15 @@ if [[ -z "$REGISTRY" ]]; then
   exit 1
 fi
 
+# === Semver validation ===
+SEMVER_RE='^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'
+if ! [[ "$VERSION" =~ $SEMVER_RE ]]; then
+  echo "Error: invalid version '$VERSION' (expected semver)" >&2
+  echo "Expected format: X.Y.Z or X.Y.Z-pre.N" >&2
+  echo "Examples: 0.1.0, 1.2.3, 2.0.0-beta.1" >&2
+  exit 1
+fi
+
 # === Localhost-only registry validation ===
 # Remove trailing slash for consistent matching
 REGISTRY_NORMALIZED="${REGISTRY%/}"
@@ -81,8 +90,15 @@ fi
 # === Create temp directory ===
 TEMP_DIR=$(mktemp -d -t agentlip-smoke-XXXXXX)
 
-# Clean up on exit (even on failure)
-trap 'rm -rf "$TEMP_DIR"' EXIT
+# Cleanup function (idempotent)
+cleanup() {
+  if [[ -n "${TEMP_DIR:-}" ]] && [[ -d "$TEMP_DIR" ]]; then
+    rm -rf "$TEMP_DIR"
+  fi
+}
+
+# Clean up on exit (even on failure or interrupt)
+trap cleanup EXIT ERR INT TERM
 
 echo ""
 echo "Smoke testing @agentlip/client@$VERSION from $REGISTRY"
@@ -95,7 +111,7 @@ cd "$TEMP_DIR"
 echo "→ Initializing Bun project..."
 if ! bun init -y > /dev/null 2>&1; then
   echo "✗ Failed to initialize Bun project in $TEMP_DIR" >&2
-  exit 1
+  exit 2
 fi
 
 # === Install @agentlip/client ===
@@ -106,7 +122,6 @@ echo "→ Installing @agentlip/client@$VERSION..."
 if bun add "@agentlip/client@$VERSION" --registry "$REGISTRY" 2>&1; then
   :
 else
-  EXIT_CODE=$?
   echo "" >&2
   echo "✗ Failed to install @agentlip/client@$VERSION from $REGISTRY" >&2
   echo "" >&2
@@ -115,7 +130,7 @@ else
   echo "  1. The local registry is running" >&2
   echo "  2. @agentlip/client@$VERSION is published to the registry" >&2
   echo "  3. You have run: npm adduser --registry $REGISTRY" >&2
-  exit $EXIT_CODE
+  exit 2
 fi
 
 # === Verify imports ===
@@ -139,12 +154,12 @@ if ! bun run verify-import.ts; then
   echo "" >&2
   echo "✗ Import verification failed" >&2
   echo "Temp directory was: $TEMP_DIR (it will be cleaned up on exit)" >&2
-  exit 1
+  exit 2
 fi
 
 echo ""
 echo "✓ Smoke test passed: @agentlip/client@$VERSION works correctly"
 echo ""
 
-# Cleanup happens via trap EXIT
+# Cleanup happens via trap
 exit 0

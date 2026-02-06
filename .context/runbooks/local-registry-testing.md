@@ -22,21 +22,33 @@
 ```
 
 **What happens:**
+- Checks prerequisites: `curl`, `docker`, `docker-compose` (exits with code 1 if missing)
+- Detects port conflicts on 4873 (exits with code 1 if already bound)
+- Warns if `agentlip-verdaccio` container already exists
 - Starts Verdaccio registry via Docker Compose (`dev/verdaccio/docker-compose.yml`)
-- Registry runs at `http://127.0.0.1:4873`
-- Waits for health check (timeout: 30s)
+- Registry runs at `http://127.0.0.1:4873` (localhost-only for security)
+- Polls `/-/ping` health endpoint every 1s, timeout after 30s (exits with code 2 on timeout)
 - Data persists in Docker volumes (`agentlip-verdaccio-storage`, `agentlip-verdaccio-plugins`) until you run `./scripts/local-registry-down.sh --clean`
 
 **Expected output:**
 ```
 [registry-up] Starting Verdaccio registry...
+[registry-up] Waiting for registry to be healthy (timeout: 30s)...
 [registry-up] Registry is healthy!
 
-  REGISTRY_URL=http://127.0.0.1:4873
+REGISTRY_URL=http://127.0.0.1:4873
 
+[registry-up] To configure npm/bun to use this registry:
+  npm set registry http://127.0.0.1:4873
+  ...
 [registry-up] To stop the registry:
   ./scripts/local-registry-down.sh
 ```
+
+**Exit codes:**
+- `0`: Success (registry is healthy)
+- `1`: Prerequisite missing or port conflict
+- `2`: Health check timeout (container may be failing)
 
 ---
 
@@ -141,33 +153,85 @@ Temp directory: /var/folders/.../agentlip-smoke-XXXXXX
 ./scripts/local-registry-down.sh --clean
 ```
 
+**Idempotent:** Running the down script multiple times is safe (exits 0 if nothing to stop).
+
 **Note:** Running `--clean` means you'll need to `npm adduser` again next time.
 
 ---
 
 ## Troubleshooting
 
-### 1. Registry Health Check Times Out
+### 1. Prerequisite Missing
+
+**Symptom:**
+```
+[registry-up] curl is not installed or not in PATH
+Install: apt-get install curl (Linux) or brew install curl (macOS)
+```
+
+**Cause:** Required tool (`curl`, `docker`, or `docker-compose`) not found.
+
+**Fix:**
+- **curl:** `brew install curl` (macOS) or `apt-get install curl` (Linux)
+- **docker:** Install from https://docs.docker.com/get-docker/
+- **docker-compose:** Usually bundled with Docker Desktop; check with `docker compose version`
+
+**Exit code:** 1
+
+---
+
+### 2. Port Conflict
+
+**Symptom:**
+```
+[registry-up] Port 4873 is already in use
+Check what's using it: lsof -i :4873
+```
+
+**Cause:** Another process (possibly old registry) is already listening on port 4873.
+
+**Fix:**
+```bash
+# Identify the process
+lsof -i :4873
+
+# If it's an old registry:
+./scripts/local-registry-down.sh
+
+# If it's something else, stop that process or change the registry port
+```
+
+**Exit code:** 1
+
+---
+
+### 3. Registry Health Check Times Out
 
 **Symptom:**
 ```
 [registry-up] Still waiting... (30s / 30s)
 [registry-up] Registry failed to become healthy after 30s
+The container may be failing to start. Check logs with:
+  cd dev/verdaccio && docker compose logs verdaccio
 ```
 
-**Cause:** Docker daemon not running, or port 4873 already in use.
+**Cause:** Container started but Verdaccio process failed to start or crashed.
 
 **Fix:**
 ```bash
-# Check Docker is running
-docker info
+# Check container logs
+cd dev/verdaccio && docker compose logs verdaccio
 
-# Check if port 4873 is already bound
-lsof -i :4873
+# Check container status
+docker ps -a | grep verdaccio
 
-# If something else is using 4873, kill it or change registry port in:
-# dev/verdaccio/docker-compose.yml
+# Common causes:
+# - Config syntax error (dev/verdaccio/config.yaml)
+# - Volume permission issue
+# - Image pull failure
 ```
+
+**Exit code:** 2
 
 ---
 

@@ -25,9 +25,16 @@ log_error() {
   echo -e "${RED}[registry-down]${NC} $*" >&2
 }
 
-# Check if docker is available
+# Prerequisite checks
 if ! command -v docker &> /dev/null; then
   log_error "Docker is not installed or not in PATH"
+  log_error "Install from: https://docs.docker.com/get-docker/"
+  exit 1
+fi
+
+if ! docker info &> /dev/null; then
+  log_error "Docker daemon is not running"
+  log_error "Start Docker Desktop or run: sudo systemctl start docker"
   exit 1
 fi
 
@@ -38,6 +45,7 @@ elif command -v docker-compose &> /dev/null; then
   COMPOSE_CMD="docker-compose"
 else
   log_error "docker-compose is not installed"
+  log_error "Install from: https://docs.docker.com/compose/install/"
   exit 1
 fi
 
@@ -60,13 +68,20 @@ done
 
 cd "$COMPOSE_DIR"
 
+# Check if container exists
+if ! docker ps -a --format '{{.Names}}' | grep -q '^agentlip-verdaccio$'; then
+  log_info "No running or stopped registry found (already clean)"
+  # Still exit 0 (idempotent)
+  exit 0
+fi
+
 # Stop the registry
 log_info "Stopping Verdaccio registry..."
 if $COMPOSE_CMD down; then
   log_info "Registry stopped successfully"
 else
-  log_error "Failed to stop docker-compose"
-  exit 1
+  log_error "Failed to stop registry via Docker Compose"
+  exit 2
 fi
 
 # Clean volumes if requested

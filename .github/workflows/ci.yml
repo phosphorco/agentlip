@@ -7,6 +7,28 @@ on:
     branches: [main]
 
 jobs:
+  craft-config:
+    name: Validate Craft Config
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Check .craft.yml exists
+        run: test -f .craft.yml
+      
+      - name: Check CHANGELOG.md exists
+        run: test -f CHANGELOG.md
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Validate Craft config
+        run: npx -y @sentry/craft config
+
   test:
     name: Test (FTS ${{ matrix.fts_enabled && 'enabled' || 'disabled' }})
     runs-on: ubuntu-latest

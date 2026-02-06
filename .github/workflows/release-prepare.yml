@@ -1,0 +1,26 @@
+name: Release Prepare
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (semver, e.g., 0.1.0)'
+        required: true
+        type: string
+
+# Queue concurrent dispatches rather than racing them
+concurrency:
+  group: craft-release-prepare
+  cancel-in-progress: false
+
+permissions:
+  contents: write       # Create release branch, push commits
+  pull-requests: write  # Create/update release PR
+
+jobs:
+  prepare-release:
+    name: Prepare release ${{ inputs.version }}
+    uses: getsentry/craft/.github/workflows/release.yml@v2
+    with:
+      version: ${{ inputs.version }}
+    secrets: inherit

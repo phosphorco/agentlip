@@ -36,8 +36,54 @@ Deliverables:
   - CI publishing must use **`npm publish`**.
   - Bun remains for install/test steps.
 
+**Evidence & Requirements:**
+- **npm Trusted Publishing:** [npm Docs - Publishing packages with provenance via GitHub Actions](https://docs.npmjs.com/generating-provenance-statements)
+  - Requires GitHub Actions OIDC token exchange (`id-token: write` permission)
+  - Requires `npm publish --provenance` (npm >= 9.5.0)
+  - No `NODE_AUTH_TOKEN` should be set; OIDC flow provides auth automatically
+- **actions/setup-node OIDC setup:** [GitHub Actions marketplace - setup-node](https://github.com/actions/setup-node#usage)
+  - Setting `registry-url: 'https://registry.npmjs.org'` configures npm to use GitHub OIDC token for auth
+  - This replaces manual `~/.npmrc` token configuration
+- **Provenance requirement:** npm >= 9.5.0 (GitHub-hosted runners with Node 20 include npm 10.x)
+
+**Decision:** Switch from `bun publish` to `npm publish --provenance` for OIDC compatibility.
+
+**Gate B Concrete Checklist (maps to `.github/workflows/publish.yml` edits):**
+1. **Add job permissions** (line ~9, after `runs-on:`):
+   ```yaml
+   permissions:
+     contents: read
+     id-token: write
+   ```
+2. **Add setup-node step** (after "Setup Bun", ~line 19):
+   ```yaml
+   - name: Setup Node.js for npm publish
+     uses: actions/setup-node@v4
+     with:
+       node-version: '20'
+       registry-url: 'https://registry.npmjs.org'
+   ```
+3. **Remove manual npmrc configuration** (delete step ~line 42):
+   ```yaml
+   - name: Configure npm authentication
+     run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+   ```
+4. **Replace all `bun publish` commands** (6 publish steps, ~lines 44-67):
+   - **Scoped packages** (protocol, kernel, workspace, client, hub):
+     ```bash
+     cd packages/<pkg> && npm publish --access public --provenance
+     ```
+   - **Unscoped CLI** (agentlip):
+     ```bash
+     cd packages/cli && npm publish --provenance
+     ```
+   - Remove `--no-git-checks` flag (not needed for npm)
+5. **Keep propagation delays** (5s sleep between publishes) unchanged
+6. **Keep publish order** unchanged: protocol → kernel → workspace → client → cli → hub
+
 Acceptance criteria:
 - We can publish from GitHub Actions without storing a reusable npm token.
+- Workflow file changes are minimal and map 1:1 to the checklist above.
 
 
 ### Gate B — Update GitHub Actions workflow for OIDC (keep token fallback temporarily)

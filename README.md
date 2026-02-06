@@ -107,6 +107,32 @@ for await (const event of conn.events()) {
 }
 ```
 
+## Local Registry (Verdaccio)
+
+For testing package publishing and installation workflows locally:
+
+```bash
+# Start local registry at http://127.0.0.1:4873
+./scripts/local-registry-up.sh
+
+# Configure npm/bun to use it (for @agentlip scope)
+npm config set @agentlip:registry http://127.0.0.1:4873
+
+# When done
+./scripts/local-registry-down.sh
+
+# To clean all data and users
+./scripts/local-registry-down.sh --clean
+```
+
+The registry requires authentication for publishing. Create a local user once with:
+
+```bash
+npm adduser --registry http://127.0.0.1:4873
+```
+
+**Requirements:** Docker and docker-compose must be installed and running.
+
 ## Publishing
 
 All packages require **Bun** runtime (not Node.js). Install via `bun add @agentlip/client` or run the CLI with `bunx agentlip`.

@@ -17,3 +17,8 @@ dist/
 
 # OS
 .DS_Store
+
+# Local development - Verdaccio registry data
+# (Storage is in docker volumes, but ignore any local config overrides)
+dev/verdaccio/storage/
+dev/verdaccio/htpasswd

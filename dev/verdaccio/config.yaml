@@ -1,0 +1,78 @@
+# Verdaccio configuration for Agentlip local development
+# See: https://verdaccio.org/docs/configuration
+
+storage: /verdaccio/storage
+plugins: /verdaccio/plugins
+
+# Web UI and API
+web:
+  title: Agentlip Local Registry
+  enable: true
+
+# Authentication - htpasswd (file-based, stored in docker volume)
+auth:
+  htpasswd:
+    file: /verdaccio/storage/htpasswd
+    # Allow registration for local dev convenience
+    max_users: 10
+    # Algorithm options: bcrypt, md5, sha1
+    algorithm: bcrypt
+    # Number of rounds (higher = more secure but slower)
+    rounds: 10
+
+# Upstream registries
+uplinks:
+  npmjs:
+    url: https://registry.npmjs.org/
+    # Cache packages from npm
+    cache: true
+
+# Package access control
+packages:
+  # Scoped packages (e.g., @agentlip/*)
+  '@agentlip/*':
+    # Require auth to publish
+    access: $all
+    publish: $authenticated
+    unpublish: $authenticated
+    proxy: npmjs
+
+  # All other packages
+  '**':
+    # Anyone can read, only authenticated can publish
+    access: $all
+    publish: $authenticated
+    unpublish: $authenticated
+    # Proxy to npmjs for packages not in local registry
+    proxy: npmjs
+
+# Server settings
+server:
+  keepAliveTimeout: 60
+
+# Logging
+logs:
+  - { type: stdout, format: pretty, level: http }
+
+# Security
+security:
+  api:
+    jwt:
+      sign:
+        expiresIn: 7d
+  web:
+    sign:
+      expiresIn: 7d
+
+# Listen on all interfaces inside container (docker handles binding to 127.0.0.1)
+listen: 0.0.0.0:4873
+
+# Middleware
+middlewares:
+  audit:
+    enabled: true
+
+# Experiments (optional, can enable features)
+experiments:
+  # Enable token-based auth
+  token: true

@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  verdaccio:
+    image: verdaccio/verdaccio:5
+    container_name: agentlip-verdaccio
+    ports:
+      - "127.0.0.1:4873:4873"
+    volumes:
+      - ./config.yaml:/verdaccio/conf/config.yaml:ro
+      - verdaccio-storage:/verdaccio/storage
+      - verdaccio-plugins:/verdaccio/plugins
+    environment:
+      - VERDACCIO_PORT=4873
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:4873/-/ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  verdaccio-storage:
+    name: agentlip-verdaccio-storage
+  verdaccio-plugins:
+    name: agentlip-verdaccio-plugins

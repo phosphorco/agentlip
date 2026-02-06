@@ -1,8 +1,22 @@
 {
   "name": "@agentlip/client",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "TypeScript SDK for connecting to Agentlip hubs",
   "type": "module",
+  "license": "MIT",
+  "homepage": "https://github.com/phosphorco/agentlip",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/phosphorco/agentlip.git",
+    "directory": "packages/client"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "files": [
+    "src/",
+    "!src/**/*.test.ts"
+  ],
   "exports": {
     ".": "./src/index.ts"
   },

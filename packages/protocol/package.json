@@ -1,8 +1,22 @@
 {
   "name": "@agentlip/protocol",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Shared protocol types and error codes for Agentlip",
   "type": "module",
+  "license": "MIT",
+  "homepage": "https://github.com/phosphorco/agentlip",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/phosphorco/agentlip.git",
+    "directory": "packages/protocol"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "files": [
+    "src/",
+    "!src/**/*.test.ts"
+  ],
   "exports": {
     ".": "./src/index.ts"
   }

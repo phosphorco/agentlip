@@ -1,8 +1,22 @@
 {
   "name": "@agentlip/cli",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "CLI for Agentlip workspace management",
   "type": "module",
+  "license": "MIT",
+  "homepage": "https://github.com/phosphorco/agentlip",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/phosphorco/agentlip.git",
+    "directory": "packages/cli"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "files": [
+    "src/",
+    "!src/**/*.test.ts"
+  ],
   "exports": {
     ".": "./src/index.ts"
   },

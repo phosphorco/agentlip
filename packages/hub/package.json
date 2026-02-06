@@ -13,8 +13,11 @@
   "engines": {
     "bun": ">=1.0.0"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
-    "src/",
+    "src/**/*.ts",
     "!src/**/*.test.ts",
     "!src/integrationHarness.ts"
   ],
@@ -26,8 +29,8 @@
     "agentlipd": "./src/agentlipd.ts"
   },
   "dependencies": {
-    "@agentlip/protocol": "workspace:*",
-    "@agentlip/workspace": "workspace:*",
-    "@agentlip/kernel": "workspace:*"
+    "@agentlip/protocol": "^0.1.0",
+    "@agentlip/workspace": "^0.1.0",
+    "@agentlip/kernel": "^0.1.0"
   }
 }

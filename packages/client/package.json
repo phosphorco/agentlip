@@ -13,15 +13,18 @@
   "engines": {
     "bun": ">=1.0.0"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
-    "src/",
+    "src/**/*.ts",
     "!src/**/*.test.ts"
   ],
   "exports": {
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@agentlip/workspace": "workspace:*",
-    "@agentlip/protocol": "workspace:*"
+    "@agentlip/workspace": "^0.1.0",
+    "@agentlip/protocol": "^0.1.0"
   }
 }

@@ -14,7 +14,7 @@
     "bun": ">=1.0.0"
   },
   "files": [
-    "src/",
+    "src/**/*.ts",
     "!src/**/*.test.ts"
   ],
   "exports": {
@@ -24,11 +24,11 @@
     "agentlip": "./src/agentlip.ts"
   },
   "dependencies": {
-    "@agentlip/workspace": "workspace:*",
-    "@agentlip/kernel": "workspace:*"
+    "@agentlip/workspace": "^0.1.0",
+    "@agentlip/kernel": "^0.1.0"
   },
   "devDependencies": {
-    "@agentlip/hub": "workspace:*"
+    "@agentlip/hub": "^0.1.0"
   },
   "scripts": {
     "test": "bun test",

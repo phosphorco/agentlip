@@ -117,6 +117,27 @@ All packages require **Bun** runtime (not Node.js). Install via `bun add @agentl
 - `NPM_TOKEN` (Automation type, publish-only scope) configured as a GitHub repository secret
 - Bun installed locally for version bumping
 
+### First-time Setup (one-time only)
+
+If the `@agentlip` scope doesn't exist yet:
+
+```bash
+# Login to npm
+npm login
+
+# Create the org (or use personal scope @<username>/)
+npm org create agentlip
+```
+
+Create an npm Automation token:
+1. Go to https://www.npmjs.com/settings/tokens
+2. Generate New Token → **Automation** type (bypasses 2FA for CI)
+3. Copy immediately (shown only once)
+
+Add to GitHub:
+1. Go to `Settings > Secrets and variables > Actions`
+2. New repository secret: `NPM_TOKEN` = your token
+
 ### Release Process
 
 1. **Bump version** across all 6 packages:

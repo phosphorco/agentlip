@@ -137,61 +137,53 @@ npm adduser --registry http://127.0.0.1:4873
 
 All packages require **Bun** runtime (not Node.js). Install via `bun add @agentlip/client` or run the CLI with `bunx agentlip`.
 
-### Prerequisites
+### Release Flow
 
-- npm account with access to the `@agentlip` scope
-- `NPM_TOKEN` (Automation type, publish-only scope) configured as a GitHub repository secret
-- Bun installed locally for version bumping
+Agentlip uses [Craft](https://craft.sentry.dev) for automated release preparation:
 
-### First-time Setup (one-time only)
+1. **Trigger Release Prepare** workflow (GitHub Actions → workflow_dispatch)
+   - Input the desired version (semver, e.g., `0.2.0`)
+   - Craft bumps all package versions and updates `CHANGELOG.md`
+   - Creates a release PR (branch: `release/X.Y.Z`)
 
-If the `@agentlip` scope doesn't exist yet:
+2. **Review and merge** the generated PR
+   - CI verifies typecheck + tests pass
+   - Changelog preview workflow annotates the PR
 
-```bash
-# Login to npm
-npm login
-
-# Create the org (or use personal scope @<username>/)
-npm org create agentlip
-```
-
-Create an npm Automation token:
-1. Go to https://www.npmjs.com/settings/tokens
-2. Generate New Token → **Automation** type (bypasses 2FA for CI)
-3. Copy immediately (shown only once)
-
-Add to GitHub:
-1. Go to `Settings > Secrets and variables > Actions`
-2. New repository secret: `NPM_TOKEN` = your token
-
-### Release Process
-
-1. **Bump version** across all 6 packages:
+3. **Tag the release** to trigger publish:
    ```bash
-   ./scripts/bump-version.sh 0.2.0
+   git tag v0.2.0 && git push --tags
    ```
-2. **Commit and tag:**
-   ```bash
-   git add -A && git commit -m 'release: v0.2.0'
-   git tag v0.2.0 && git push && git push --tags
-   ```
-3. **CI publishes** (`.github/workflows/publish.yml`):
-   - Runs typecheck + full test suite
-   - Verifies version consistency across all packages
+
+4. **CI publishes** to npm (`.github/workflows/publish.yml`):
    - Publishes packages in dependency order: `protocol` → `kernel` → `workspace` → `client` → `cli` → `hub`
    - Waits 5s between packages for npm propagation
    - Post-publish smoke test: installs `@agentlip/client` and verifies import
 
-### Manual Publish (if CI fails)
+**See:** `.context/runbooks/craft-release.md` for step-by-step instructions and troubleshooting.
+
+### Local Registry Testing
+
+For testing the publish flow before releasing:
 
 ```bash
-npm set //registry.npmjs.org/:_authToken=$NPM_TOKEN
+# Start local Verdaccio registry
+./scripts/local-registry-up.sh
 
-for pkg in protocol kernel workspace client cli hub; do
-  cd packages/$pkg && bun publish --access public --no-git-checks && cd ../..
-  sleep 5
-done
+# Publish all packages locally
+./scripts/publish-local.sh 0.2.0-test.1 --registry http://127.0.0.1:4873
+
+# Verify installation works
+./scripts/smoke-install-from-registry.sh 0.2.0-test.1 --registry http://127.0.0.1:4873
 ```
+
+**See:** `.context/runbooks/local-registry-testing.md` for full workflow and troubleshooting.
+
+### Prerequisites
+
+- npm account with access to the `@agentlip` scope
+- `NPM_TOKEN` (Automation type) configured as a GitHub repository secret
+- Bun installed locally
 
 ### Recovery
 
@@ -203,7 +195,7 @@ done
 ```
 
 **Resume from failed package:**  
-If `client` failed but `protocol`, `kernel`, `workspace` succeeded, resume:
+If `client` failed but `protocol`, `kernel`, `workspace` succeeded:
 ```bash
 cd packages/client && bun publish --access public --no-git-checks
 ```

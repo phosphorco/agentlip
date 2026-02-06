@@ -25,7 +25,7 @@ import { openDb, runMigrations } from "./index";
 import type { Database } from "bun:sqlite";
 
 const TEST_DIR = join(import.meta.dir, ".test-tmp-crash-safety");
-const MIGRATIONS_DIR = join(import.meta.dir, "../../../migrations");
+const MIGRATIONS_DIR = join(import.meta.dir, "../migrations");
 
 function setupTestDb(): { db: Database; dbPath: string } {
   const dbPath = join(

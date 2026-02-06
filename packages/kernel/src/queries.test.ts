@@ -25,7 +25,7 @@ import {
 import type { Database } from "bun:sqlite";
 
 const TEST_DIR = join(import.meta.dir, ".test-tmp-queries");
-const MIGRATIONS_DIR = join(import.meta.dir, "../../../migrations");
+const MIGRATIONS_DIR = join(import.meta.dir, "../migrations");
 
 interface TestData {
   db: Database;

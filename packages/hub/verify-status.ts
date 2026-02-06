@@ -50,8 +50,8 @@ async function test() {
 
     // Initialize schema
     const db = openDb({ dbPath });
-    const migrationsDir = join(import.meta.dir, "../../migrations");
-    runMigrations({ db, migrationsDir });
+    const { MIGRATIONS_DIR } = await import("@agentlip/kernel");
+    runMigrations({ db, migrationsDir: MIGRATIONS_DIR });
     db.close();
 
     // Test 1: status=not_running when server.json missing

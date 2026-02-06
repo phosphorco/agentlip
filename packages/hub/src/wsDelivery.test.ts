@@ -15,12 +15,11 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { unlinkSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Database } from "bun:sqlite";
-import { openDb, runMigrations, insertEvent } from "@agentlip/kernel";
+import { openDb, runMigrations, insertEvent, MIGRATIONS_DIR } from "@agentlip/kernel";
 import { createWsHub, createWsHandlers } from "./wsEndpoint";
 import { generateAuthToken } from "./authToken";
 
 const TEST_DIR = join(import.meta.dir, ".test-tmp-ws-delivery");
-const MIGRATIONS_DIR = join(import.meta.dir, "../../../migrations");
 const AUTH_TOKEN = generateAuthToken();
 
 interface TestContext {

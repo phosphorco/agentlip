@@ -11,7 +11,7 @@
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { Database } from "bun:sqlite";
-import { openDb, runMigrations } from "@agentlip/kernel";
+import { openDb, runMigrations, MIGRATIONS_DIR } from "@agentlip/kernel";
 import { runExtractorPluginsForMessage } from "./extractorDerived";
 import type { WorkspaceConfig } from "./config";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -31,8 +31,7 @@ beforeEach(() => {
 
   // Setup in-memory database with schema
   db = openDb({ dbPath: ":memory:" });
-  const migrationsDir = join(__dirname, "../../../migrations");
-  runMigrations({ db, migrationsDir });
+  runMigrations({ db, migrationsDir: MIGRATIONS_DIR });
 });
 
 afterEach(() => {

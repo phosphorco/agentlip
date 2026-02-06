@@ -11,6 +11,9 @@ import { randomUUID } from "node:crypto";
 import { copyFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+// Export migrations directory
+export const MIGRATIONS_DIR = join(import.meta.dir, "../migrations");
+
 // Re-export events module
 export {
   insertEvent,

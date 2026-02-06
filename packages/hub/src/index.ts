@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { Server } from "bun";
 import type { HealthResponse } from "@agentlip/protocol";
 import { PROTOCOL_VERSION } from "@agentlip/protocol";
-import { openDb, runMigrations } from "@agentlip/kernel";
+import { openDb, runMigrations, MIGRATIONS_DIR as KERNEL_MIGRATIONS_DIR } from "@agentlip/kernel";
 import { requireAuth, requireWsToken } from "./authMiddleware";
 import { handleApiV1, type ApiV1Context } from "./apiV1";
 import { createWsHub, createWsHandlers } from "./wsEndpoint";
@@ -370,7 +370,7 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
 
   // Open database (default: in-memory for tests) and apply migrations
   const effectiveMigrationsDir =
-    migrationsDir ?? join(import.meta.dir, "../../../migrations");
+    migrationsDir ?? KERNEL_MIGRATIONS_DIR;
   const db = openDb({ dbPath });
   try {
     runMigrations({ db, migrationsDir: effectiveMigrationsDir, enableFts: effectiveEnableFts });

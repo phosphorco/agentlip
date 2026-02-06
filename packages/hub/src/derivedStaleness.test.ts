@@ -13,7 +13,7 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { openDb, runMigrations } from "@agentlip/kernel";
+import { openDb, runMigrations, MIGRATIONS_DIR } from "@agentlip/kernel";
 import {
   withMessageStalenessGuard,
   captureSnapshot,
@@ -26,7 +26,6 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TEST_DIR = join(import.meta.dir, ".test-tmp-staleness");
-const MIGRATIONS_DIR = join(import.meta.dir, "../../../migrations");
 
 async function setupTestDb(): Promise<Database> {
   await mkdir(TEST_DIR, { recursive: true });

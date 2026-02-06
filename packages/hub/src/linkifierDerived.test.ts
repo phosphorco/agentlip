@@ -18,7 +18,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import type { WorkspaceConfig } from "./config";
 import { runLinkifierPluginsForMessage } from "./linkifierDerived";
-import { getEventById, runMigrations } from "@agentlip/kernel";
+import { getEventById, runMigrations, MIGRATIONS_DIR } from "@agentlip/kernel";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test Helpers
@@ -38,7 +38,7 @@ async function setupTestContext(): Promise<TestContext> {
   // Run migrations to create schema
   runMigrations({ 
     db, 
-    migrationsDir: join(import.meta.dir, "../../../migrations"),
+    migrationsDir: MIGRATIONS_DIR,
     enableFts: false 
   });
   

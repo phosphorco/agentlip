@@ -17,7 +17,7 @@ import { tombstoneDeleteMessage, editMessage } from "./messageMutations";
 import type { Database } from "bun:sqlite";
 
 const TEST_DIR = join(import.meta.dir, ".test-tmp-adr008");
-const MIGRATIONS_DIR = join(import.meta.dir, "../../../migrations");
+const MIGRATIONS_DIR = join(import.meta.dir, "../migrations");
 
 function setupTestDb(): { db: Database; dbPath: string } {
   const dbPath = join(

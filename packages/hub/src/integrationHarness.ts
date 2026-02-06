@@ -10,11 +10,9 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promises as fs } from "node:fs";
-import { openDb, runMigrations } from "@agentlip/kernel";
+import { openDb, runMigrations, MIGRATIONS_DIR } from "@agentlip/kernel";
 import { ensureWorkspaceInitialized } from "@agentlip/workspace";
 import { startHub, type HubServer } from "./index";
-
-const MIGRATIONS_DIR = join(__dirname, "../../../migrations");
 
 /**
  * Temporary workspace for testing

@@ -30,7 +30,7 @@ import { getLatestEventId, replayEvents } from "./events";
 import type { Database } from "bun:sqlite";
 
 const TEST_DIR = join(import.meta.dir, ".test-tmp-concurrency");
-const MIGRATIONS_DIR = join(import.meta.dir, "../../../migrations");
+const MIGRATIONS_DIR = join(import.meta.dir, "../migrations");
 
 // Helper to generate sortable message IDs
 let msgCounter = 0;

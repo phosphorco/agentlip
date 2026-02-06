@@ -30,8 +30,8 @@ async function demo() {
     console.log("1. Initializing workspace...");
     const { root, dbPath } = await discoverOrInitWorkspace(tmpRoot);
     const db = openDb({ dbPath });
-    const migrationsDir = join(import.meta.dir, "../../migrations");
-    runMigrations({ db, migrationsDir });
+    const { MIGRATIONS_DIR } = await import("@agentlip/kernel");
+    runMigrations({ db, migrationsDir: MIGRATIONS_DIR });
 
     // Read db_id from meta
     const dbIdRow = db

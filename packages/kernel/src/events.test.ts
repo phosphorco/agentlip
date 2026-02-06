@@ -18,7 +18,7 @@ import {
 import type { Database } from "bun:sqlite";
 
 const TEST_DIR = join(import.meta.dir, ".test-tmp-events");
-const MIGRATIONS_DIR = join(import.meta.dir, "../../../migrations");
+const MIGRATIONS_DIR = join(import.meta.dir, "../migrations");
 
 function setupTestDb(): { db: Database; dbPath: string } {
   const dbPath = join(TEST_DIR, `events-test-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);

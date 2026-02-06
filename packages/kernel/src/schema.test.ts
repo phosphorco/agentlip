@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { openDb, runMigrations, isFtsAvailable, SCHEMA_VERSION } from "./index";
 
 const TEST_DIR = join(import.meta.dir, ".test-tmp");
-const MIGRATIONS_DIR = join(import.meta.dir, "../../../migrations");
+const MIGRATIONS_DIR = join(import.meta.dir, "../migrations");
 
 beforeEach(() => {
   if (!existsSync(TEST_DIR)) {

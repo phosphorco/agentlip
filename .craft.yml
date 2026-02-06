@@ -1,0 +1,25 @@
+# Craft configuration for Agentlip
+# https://craft.sentry.dev/configuration/
+
+# GitHub repository
+github:
+  owner: phosphorco
+  repo: agentlip
+
+# Manual versioning (explicit version argument required)
+versioning:
+  policy: manual
+
+# Simple changelog policy.
+# Craft's "simple" policy currently uses the default file: CHANGELOG.md
+changelog:
+  policy: simple
+
+# Pre-release command: bump all package versions
+preReleaseCommand: bash scripts/bump-version.sh
+
+# Release branch prefix (default: release)
+releaseBranchPrefix: release
+
+# No build targets for now (Bun-only runtime, no transpilation)
+targets: []

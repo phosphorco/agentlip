@@ -57,10 +57,10 @@ E (docs) ── depends on A, B, C, D complete
 - Add `.craft.yml` with:
   - `github.owner` / `github.repo`
   - `versioning.policy: manual` (explicit version argument)
-  - `changelog.policy: simple` pointing at a repo changelog file (e.g. `CHANGES.md`)
+  - `changelog.policy: simple` using the default repo changelog file (`CHANGELOG.md`)
   - `preReleaseCommand: bash scripts/bump-version.sh`
   - (optional) `releaseBranchPrefix` (keep default `release` unless we need `publish/`)
-- Add `CHANGES.md` (initial structure; doesn't need historic entries yet)
+- Add `CHANGELOG.md` (initial structure; doesn't need historic entries yet)
 
 ### Acceptance
 - `craft` can read config and run `craft prepare 0.1.1` locally (dry-run / no push) without config errors.

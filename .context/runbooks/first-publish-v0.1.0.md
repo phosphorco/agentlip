@@ -175,16 +175,14 @@ done
 ```bash
 # Set token (don't echo it)
 export NPM_TOKEN="npm_..."
-
-# Configure npm auth
-npm set //registry.npmjs.org/:_authToken=$NPM_TOKEN
+export NODE_AUTH_TOKEN="$NPM_TOKEN"
 
 # Publish remaining packages (example: client failed, need client + cli + hub)
-cd packages/client && bun publish --access public --no-git-checks && cd ../..
+cd packages/client && npm publish --access public && cd ../..
 sleep 5
-cd packages/cli && bun publish --no-git-checks && cd ../..
+cd packages/cli && npm publish && cd ../..
 sleep 5
-cd packages/hub && bun publish --access public --no-git-checks && cd ../..
+cd packages/hub && npm publish --access public && cd ../..
 ```
 
 ### Unpublish bad version (within 72 hours)

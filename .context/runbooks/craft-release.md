@@ -171,7 +171,7 @@ git push origin --delete release/0.2.0
 
 ### 4. Publish Fails: version already exists on npm
 
-**Symptom:** `bun publish` fails with "cannot publish over existing version".
+**Symptom:** `npm publish` fails with "cannot publish over existing version".
 
 **Cause:** A package at that version was already published (possibly a partial failure).
 
@@ -214,15 +214,21 @@ for pkg in protocol kernel workspace client cli hub; do
   echo "$pkg: $(jq -r .version packages/$pkg/package.json)"
 done
 
-# Set npm token
-npm set //registry.npmjs.org/:_authToken=$NPM_TOKEN
+# Set npm token (token fallback path; provenance will not be emitted)
+export NODE_AUTH_TOKEN="$NPM_TOKEN"
 
 # Publish in dependency order
-for pkg in protocol kernel workspace client cli hub; do
-  echo "Publishing $pkg..."
-  cd packages/$pkg && bun publish --access public --no-git-checks && cd ../..
-  sleep 5
-done
+cd packages/protocol && npm publish --access public && cd ../..
+sleep 5
+cd packages/kernel && npm publish --access public && cd ../..
+sleep 5
+cd packages/workspace && npm publish --access public && cd ../..
+sleep 5
+cd packages/client && npm publish --access public && cd ../..
+sleep 5
+cd packages/cli && npm publish && cd ../..
+sleep 5
+cd packages/hub && npm publish --access public && cd ../..
 ```
 
 ---

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Verification script for @agentlip/cli
+ * Verification script for agentlip CLI
  * 
  * Checks:
  * 1. Library exports work correctly
@@ -15,7 +15,7 @@ import { Database } from "bun:sqlite";
 import { $ } from "bun";
 
 async function runVerification() {
-  console.log("🔍 Verifying @agentlip/cli...\n");
+  console.log("🔍 Verifying agentlip CLI...\n");
 
   let tempDir: string | null = null;
   let passed = 0;

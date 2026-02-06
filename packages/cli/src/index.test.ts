@@ -1,5 +1,5 @@
 /**
- * Tests for @agentlip/cli workspace discovery and read-only DB opening
+ * Tests for agentlip CLI workspace discovery and read-only DB opening
  */
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";

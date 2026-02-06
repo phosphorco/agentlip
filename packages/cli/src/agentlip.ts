@@ -15,7 +15,7 @@
 
 // Runtime guard: require Bun
 if (typeof Bun === "undefined") {
-  console.error("Error: @agentlip/cli requires Bun runtime (https://bun.sh)");
+  console.error("Error: agentlip requires Bun runtime (https://bun.sh)");
   process.exit(1);
 }
 

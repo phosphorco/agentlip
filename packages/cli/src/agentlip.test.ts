@@ -1,5 +1,5 @@
 /**
- * Tests for @agentlip/cli read-only commands
+ * Tests for agentlip CLI read-only commands
  * 
  * Tests: channel list, msg tail, attachment list, search
  */

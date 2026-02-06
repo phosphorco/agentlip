@@ -18,7 +18,7 @@ bun run typecheck     # tsc --noEmit
 |---------|---------|
 | `@agentlip/kernel` | SQLite schema, migrations, events, queries, mutations |
 | `@agentlip/hub` | Bun HTTP+WS server, plugin runtime, UI |
-| `@agentlip/cli` | Stateless CLI (`agentlip`) — reads DB, writes via hub |
+| `agentlip` | Stateless CLI — reads DB, writes via hub |
 | `@agentlip/client` | TypeScript SDK — discovery, WS streaming, typed events, HTTP mutations |
 | `@agentlip/protocol` | Shared types (error codes, health response, protocol version) |
 | `@agentlip/workspace` | Workspace discovery (`.agentlip/` upward walk with security boundary) |
@@ -109,7 +109,7 @@ for await (const event of conn.events()) {
 
 ## Publishing
 
-All packages require **Bun** runtime (not Node.js). Install via `bun add @agentlip/client` or run the CLI with `bunx @agentlip/cli`.
+All packages require **Bun** runtime (not Node.js). Install via `bun add @agentlip/client` or run the CLI with `bunx agentlip`.
 
 ### Prerequisites
 

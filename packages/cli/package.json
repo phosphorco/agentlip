@@ -1,5 +1,5 @@
 {
-  "name": "@agentlip/cli",
+  "name": "agentlip",
   "version": "0.1.0",
   "description": "CLI for Agentlip workspace management",
   "type": "module",

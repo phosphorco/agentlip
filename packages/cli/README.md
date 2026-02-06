@@ -1,4 +1,4 @@
-# @agentlip/cli
+# agentlip
 
 Stateless CLI for Agentlip workspaces. Provides:
 
@@ -17,7 +17,7 @@ import {
   openWorkspaceDbReadonly,
   isQueryOnly,
   WorkspaceNotFoundError,
-} from "@agentlip/cli";
+} from "agentlip";
 
 // Discover workspace (returns null if not found)
 const discovered = await discoverWorkspaceRoot("/path/to/start");

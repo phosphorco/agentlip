@@ -1,5 +1,5 @@
 /**
- * @agentlip/cli - CLI utilities for Agentlip
+ * agentlip - CLI utilities for Agentlip
  * 
  * Provides:
  * - Workspace discovery (reusing @agentlip/workspace)

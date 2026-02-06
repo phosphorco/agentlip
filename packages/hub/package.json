@@ -20,8 +20,7 @@
   ],
   "exports": {
     ".": "./src/index.ts",
-    "./agentlipd": "./src/agentlipd.ts",
-    "./test-harness": "./src/integrationHarness.ts"
+    "./agentlipd": "./src/agentlipd.ts"
   },
   "bin": {
     "agentlipd": "./src/agentlipd.ts"

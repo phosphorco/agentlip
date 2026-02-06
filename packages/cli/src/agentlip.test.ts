@@ -838,12 +838,12 @@ describe("listen command (live WS)", () => {
   test.skipIf(skipLiveTests)("connects to hub and receives hello_ok", async () => {
     // This test requires @agentlip/hub test harness
     // Import dynamically to avoid hard dependency
-    let createTempWorkspace: typeof import("@agentlip/hub/test-harness").createTempWorkspace;
-    let startTestHub: typeof import("@agentlip/hub/test-harness").startTestHub;
-    let wsConnect: typeof import("@agentlip/hub/test-harness").wsConnect;
+    let createTempWorkspace: typeof import("../../hub/src/integrationHarness.js").createTempWorkspace;
+    let startTestHub: typeof import("../../hub/src/integrationHarness.js").startTestHub;
+    let wsConnect: typeof import("../../hub/src/integrationHarness.js").wsConnect;
 
     try {
-      const harness = await import("@agentlip/hub/test-harness");
+      const harness = await import("../../hub/src/integrationHarness.js");
       createTempWorkspace = harness.createTempWorkspace;
       startTestHub = harness.startTestHub;
       wsConnect = harness.wsConnect;
@@ -885,12 +885,12 @@ describe("listen command (live WS)", () => {
   });
 
   test.skipIf(skipLiveTests)("receives events when message is created", async () => {
-    let createTempWorkspace: typeof import("@agentlip/hub/test-harness").createTempWorkspace;
-    let startTestHub: typeof import("@agentlip/hub/test-harness").startTestHub;
-    let wsConnect: typeof import("@agentlip/hub/test-harness").wsConnect;
+    let createTempWorkspace: typeof import("../../hub/src/integrationHarness.js").createTempWorkspace;
+    let startTestHub: typeof import("../../hub/src/integrationHarness.js").startTestHub;
+    let wsConnect: typeof import("../../hub/src/integrationHarness.js").wsConnect;
 
     try {
-      const harness = await import("@agentlip/hub/test-harness");
+      const harness = await import("../../hub/src/integrationHarness.js");
       createTempWorkspace = harness.createTempWorkspace;
       startTestHub = harness.startTestHub;
       wsConnect = harness.wsConnect;
@@ -982,11 +982,11 @@ describe("mutation commands (HTTP)", () => {
   const skipLiveTests = process.env.SKIP_LIVE_WS_TESTS === "1";
 
   test.skipIf(skipLiveTests)("msg send creates a message via HTTP API", async () => {
-    let createTempWorkspace: typeof import("@agentlip/hub/test-harness").createTempWorkspace;
-    let startTestHub: typeof import("@agentlip/hub/test-harness").startTestHub;
+    let createTempWorkspace: typeof import("../../hub/src/integrationHarness.js").createTempWorkspace;
+    let startTestHub: typeof import("../../hub/src/integrationHarness.js").startTestHub;
 
     try {
-      const harness = await import("@agentlip/hub/test-harness");
+      const harness = await import("../../hub/src/integrationHarness.js");
       createTempWorkspace = harness.createTempWorkspace;
       startTestHub = harness.startTestHub;
     } catch {
@@ -1059,11 +1059,11 @@ describe("mutation commands (HTTP)", () => {
   });
 
   test.skipIf(skipLiveTests)("msg edit updates message with version tracking", async () => {
-    let createTempWorkspace: typeof import("@agentlip/hub/test-harness").createTempWorkspace;
-    let startTestHub: typeof import("@agentlip/hub/test-harness").startTestHub;
+    let createTempWorkspace: typeof import("../../hub/src/integrationHarness.js").createTempWorkspace;
+    let startTestHub: typeof import("../../hub/src/integrationHarness.js").startTestHub;
 
     try {
-      const harness = await import("@agentlip/hub/test-harness");
+      const harness = await import("../../hub/src/integrationHarness.js");
       createTempWorkspace = harness.createTempWorkspace;
       startTestHub = harness.startTestHub;
     } catch {
@@ -1138,11 +1138,11 @@ describe("mutation commands (HTTP)", () => {
   });
 
   test.skipIf(skipLiveTests)("msg edit returns VERSION_CONFLICT with details when version mismatches", async () => {
-    let createTempWorkspace: typeof import("@agentlip/hub/test-harness").createTempWorkspace;
-    let startTestHub: typeof import("@agentlip/hub/test-harness").startTestHub;
+    let createTempWorkspace: typeof import("../../hub/src/integrationHarness.js").createTempWorkspace;
+    let startTestHub: typeof import("../../hub/src/integrationHarness.js").startTestHub;
 
     try {
-      const harness = await import("@agentlip/hub/test-harness");
+      const harness = await import("../../hub/src/integrationHarness.js");
       createTempWorkspace = harness.createTempWorkspace;
       startTestHub = harness.startTestHub;
     } catch {
@@ -1218,11 +1218,11 @@ describe("mutation commands (HTTP)", () => {
   });
 
   test.skipIf(skipLiveTests)("msg delete tombstones message", async () => {
-    let createTempWorkspace: typeof import("@agentlip/hub/test-harness").createTempWorkspace;
-    let startTestHub: typeof import("@agentlip/hub/test-harness").startTestHub;
+    let createTempWorkspace: typeof import("../../hub/src/integrationHarness.js").createTempWorkspace;
+    let startTestHub: typeof import("../../hub/src/integrationHarness.js").startTestHub;
 
     try {
-      const harness = await import("@agentlip/hub/test-harness");
+      const harness = await import("../../hub/src/integrationHarness.js");
       createTempWorkspace = harness.createTempWorkspace;
       startTestHub = harness.startTestHub;
     } catch {
@@ -1305,11 +1305,11 @@ describe("mutation commands (HTTP)", () => {
   });
 
   test.skipIf(skipLiveTests)("topic rename updates title and emits event", async () => {
-    let createTempWorkspace: typeof import("@agentlip/hub/test-harness").createTempWorkspace;
-    let startTestHub: typeof import("@agentlip/hub/test-harness").startTestHub;
+    let createTempWorkspace: typeof import("../../hub/src/integrationHarness.js").createTempWorkspace;
+    let startTestHub: typeof import("../../hub/src/integrationHarness.js").startTestHub;
 
     try {
-      const harness = await import("@agentlip/hub/test-harness");
+      const harness = await import("../../hub/src/integrationHarness.js");
       createTempWorkspace = harness.createTempWorkspace;
       startTestHub = harness.startTestHub;
     } catch {
@@ -1366,11 +1366,11 @@ describe("mutation commands (HTTP)", () => {
   });
 
   test.skipIf(skipLiveTests)("attachment add creates attachment with deduplication", async () => {
-    let createTempWorkspace: typeof import("@agentlip/hub/test-harness").createTempWorkspace;
-    let startTestHub: typeof import("@agentlip/hub/test-harness").startTestHub;
+    let createTempWorkspace: typeof import("../../hub/src/integrationHarness.js").createTempWorkspace;
+    let startTestHub: typeof import("../../hub/src/integrationHarness.js").startTestHub;
 
     try {
-      const harness = await import("@agentlip/hub/test-harness");
+      const harness = await import("../../hub/src/integrationHarness.js");
       createTempWorkspace = harness.createTempWorkspace;
       startTestHub = harness.startTestHub;
     } catch {

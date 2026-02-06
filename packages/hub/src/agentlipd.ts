@@ -6,6 +6,12 @@
  * - status: check hub health and validate against on-disk DB
  */
 
+// Runtime guard: require Bun
+if (typeof Bun === "undefined") {
+  console.error("Error: @agentlip/hub requires Bun runtime (https://bun.sh)");
+  process.exit(1);
+}
+
 import { readServerJson } from "./serverJson.js";
 import { discoverWorkspaceRoot } from "@agentlip/workspace";
 import { openDb } from "@agentlip/kernel";

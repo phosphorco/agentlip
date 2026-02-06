@@ -13,6 +13,12 @@
  * - listen: stream events via WebSocket
  */
 
+// Runtime guard: require Bun
+if (typeof Bun === "undefined") {
+  console.error("Error: @agentlip/cli requires Bun runtime (https://bun.sh)");
+  process.exit(1);
+}
+
 import { openWorkspaceDbReadonly, isQueryOnly, WorkspaceNotFoundError, DatabaseNotFoundError, discoverWorkspaceRoot } from "./index.js";
 import {
   listChannels,

@@ -207,6 +207,15 @@ export interface StartHubOptions {
     allowlist?: RegExp[];
     blocklist?: RegExp[];
   };
+  /**
+   * Idle auto-shutdown timeout in milliseconds (opt-in, daemon mode only).
+   * When set and no WebSocket clients are connected:
+   * - Hub tracks activity from non-health HTTP requests and WS events
+   * - If idle for this duration, hub gracefully shuts down (calls stop() then process.exit(0))
+   * - Only active when workspaceRoot is set (daemon mode)
+   * - Hub is never considered idle while wsHub.getConnectionCount() > 0
+   */
+  idleShutdownMs?: number;
 }
 
 export interface HubServer {
@@ -406,11 +415,28 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
 
   // Initialize WS hub (used when /ws is upgraded)
   const wsHub = createWsHub({ db, instanceId }) as any;
-  const wsHandlers = createWsHandlers({
+  const baseWsHandlers = createWsHandlers({
     db,
     authToken: authToken ?? "",
     hub: wsHub,
   });
+
+  // Wrap WebSocket handlers to track activity for idle shutdown
+  const wsHandlers = {
+    upgrade: baseWsHandlers.upgrade,
+    open: (ws: any) => {
+      markActivity();
+      baseWsHandlers.open(ws);
+    },
+    message: (ws: any, message: string | Buffer) => {
+      markActivity();
+      baseWsHandlers.message(ws, message);
+    },
+    close: (ws: any) => {
+      markActivity();
+      baseWsHandlers.close(ws);
+    },
+  };
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Plugin derived pipelines (linkifiers/extractors)
@@ -504,6 +530,19 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
   // Track in-flight requests for graceful drain
   let inflightCount = 0;
   const inflightPromises = new Set<Promise<void>>();
+
+  // Idle shutdown tracking (opt-in, daemon mode only)
+  let lastActivityMs = Date.now();
+  let idleCheckInterval: Timer | null = null;
+  let idleShutdownInProgress = false;
+
+  /**
+   * Mark activity for idle shutdown tracking.
+   * Called on non-health HTTP requests and WS events.
+   */
+  function markActivity(): void {
+    lastActivityMs = Date.now();
+  }
   
   const server = Bun.serve({
     hostname: host,
@@ -565,6 +604,9 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
 
       // GET /ws - WebSocket upgrade endpoint
       if (url.pathname === "/ws") {
+        // Mark activity for idle shutdown tracking
+        markActivity();
+
         if (!authToken) {
           const response = new Response(
             JSON.stringify({
@@ -604,6 +646,9 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
         });
         return wsHandlers.upgrade(req, bunServer);
       }
+
+      // Mark activity for all non-health HTTP requests
+      markActivity();
 
       return (async () => {
       // Track event IDs produced by mutations
@@ -810,7 +855,80 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
     }
   }
 
-  return {
+  // Set up idle auto-shutdown (opt-in, daemon mode only)
+  if (daemonMode && workspaceRoot && options.idleShutdownMs) {
+    const idleShutdownMs = options.idleShutdownMs;
+    const checkIntervalMs = Math.min(idleShutdownMs / 4, 30_000);
+
+    idleCheckInterval = setInterval(async () => {
+      // Skip if already shutting down or idle shutdown in progress
+      if (shuttingDown || idleShutdownInProgress) {
+        return;
+      }
+
+      const now = Date.now();
+      const idleMs = now - lastActivityMs;
+
+      // Check if hub is idle (no activity AND no WS clients)
+      const hasWsClients = wsHub.getConnectionCount() > 0;
+      const isIdle = idleMs >= idleShutdownMs && !hasWsClients;
+
+      if (!isIdle) {
+        return;
+      }
+
+      // Mark idle shutdown in progress to prevent concurrent shutdowns
+      idleShutdownInProgress = true;
+
+      // Race safety: re-check activity and WS client count before shutdown
+      // (activity may have happened between the check above and now)
+      const finalIdleMs = Date.now() - lastActivityMs;
+      const finalHasWsClients = wsHub.getConnectionCount() > 0;
+      const stillIdle = finalIdleMs >= idleShutdownMs && !finalHasWsClients;
+
+      if (!stillIdle) {
+        // Activity happened or WS client connected - abort shutdown
+        idleShutdownInProgress = false;
+        return;
+      }
+
+      // Log idle shutdown (unless in test environment)
+      if (!isTestEnvironment()) {
+        console.log(
+          JSON.stringify({
+            ts: new Date().toISOString(),
+            level: "info",
+            msg: "idle_shutdown",
+            idle_ms: finalIdleMs,
+            instance_id: instanceId,
+          })
+        );
+      }
+
+      try {
+        // Clear interval before shutdown
+        if (idleCheckInterval) {
+          clearInterval(idleCheckInterval);
+          idleCheckInterval = null;
+        }
+
+        // Graceful shutdown
+        await hubServerInstance.stop();
+
+        // Exit process (only in non-test environment)
+        if (!isTestEnvironment()) {
+          process.exit(0);
+        }
+      } catch (err) {
+        if (!isTestEnvironment()) {
+          console.error("Idle shutdown failed:", err);
+          process.exit(1);
+        }
+      }
+    }, checkIntervalMs);
+  }
+
+  const hubServerInstance: HubServer = {
     server,
     instanceId,
     port: boundPort,
@@ -819,6 +937,12 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
     async stop() {
       // Set shutdown flag to reject new work
       shuttingDown = true;
+
+      // Clear idle shutdown interval
+      if (idleCheckInterval) {
+        clearInterval(idleCheckInterval);
+        idleCheckInterval = null;
+      }
 
       try {
         // Wait for in-flight requests to complete (with timeout)
@@ -875,4 +999,6 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubServer
       }
     },
   };
+
+  return hubServerInstance;
 }

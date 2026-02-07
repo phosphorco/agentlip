@@ -11,6 +11,179 @@ import { wsConnect, type WsConnection } from "./ws";
 import { createChannel, createTopic, sendMessage, type HubHttpClient } from "./mutations";
 import type { EventEnvelope } from "./types";
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Unit tests for WebSocket injection
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("WebSocket injection (unit)", () => {
+  // Simple close event interface for testing
+  interface TestCloseEvent {
+    code: number;
+    reason: string;
+  }
+
+  test("wsConnect throws clear error when no WebSocket available", async () => {
+    // Save original
+    const originalWs = globalThis.WebSocket;
+
+    try {
+      // Temporarily remove global WebSocket
+      (globalThis as any).WebSocket = undefined;
+
+      // Should throw clear error
+      await expect(
+        wsConnect({
+          url: "ws://localhost:9999/ws",
+          authToken: "test",
+          afterEventId: 0,
+        }),
+      ).rejects.toThrow("WebSocket not available. Pass webSocketImpl option or use Node 22+.");
+    } finally {
+      // Restore
+      globalThis.WebSocket = originalWs;
+    }
+  });
+
+  test("wsConnect uses injected webSocketImpl for construction", async () => {
+    const constructorCalls: string[] = [];
+
+    // Fake WebSocket implementation that records constructor calls
+    class FakeWebSocket {
+      onopen: ((event: any) => void) | null = null;
+      onclose: ((event: TestCloseEvent) => void) | null = null;
+      onmessage: ((event: any) => void) | null = null;
+      onerror: ((event: any) => void) | null = null;
+
+      constructor(url: string) {
+        constructorCalls.push(url);
+
+        // Simulate successful connection
+        setTimeout(() => {
+          if (this.onopen) {
+            this.onopen({});
+          }
+        }, 10);
+      }
+
+      send(data: string): void {
+        // Parse hello message and respond with hello_ok
+        setTimeout(() => {
+          if (this.onmessage) {
+            this.onmessage({
+              data: JSON.stringify({
+                type: "hello_ok",
+                replay_until: 0,
+                instance_id: "test-instance",
+              }),
+            });
+          }
+        }, 10);
+      }
+
+      close(_code?: number, _reason?: string): void {
+        setTimeout(() => {
+          if (this.onclose) {
+            this.onclose({ code: 1000, reason: "test close" });
+          }
+        }, 10);
+      }
+    }
+
+    const conn = await wsConnect({
+      url: "ws://test-host:8080/ws",
+      authToken: "injected-token",
+      afterEventId: 0,
+      webSocketImpl: FakeWebSocket as any,
+    });
+
+    // Should have called constructor once for initial connection
+    expect(constructorCalls.length).toBe(1);
+    expect(constructorCalls[0]).toContain("ws://test-host:8080/ws?token=injected-token");
+
+    conn.close();
+  });
+
+  test("reconnect uses injected webSocketImpl", async () => {
+    const constructorCalls: string[] = [];
+    const callbacks = {
+      onclose: null as ((event: TestCloseEvent) => void) | null,
+    };
+
+    // Fake WebSocket that can trigger reconnect
+    class FakeWebSocketWithReconnect {
+      onopen: ((event: any) => void) | null = null;
+      onclose: ((event: TestCloseEvent) => void) | null = null;
+      onmessage: ((event: any) => void) | null = null;
+      onerror: ((event: any) => void) | null = null;
+
+      constructor(url: string) {
+        constructorCalls.push(url);
+
+        // Open connection
+        setTimeout(() => {
+          if (this.onopen) {
+            this.onopen({});
+          }
+        }, 10);
+      }
+
+      send(data: string): void {
+        // Always respond with hello_ok
+        setTimeout(() => {
+          if (this.onmessage) {
+            this.onmessage({
+              data: JSON.stringify({
+                type: "hello_ok",
+                replay_until: 0,
+                instance_id: "test-instance",
+              }),
+            });
+          }
+
+          // Store close callback for test to trigger reconnect
+          if (constructorCalls.length === 1 && this.onclose) {
+            callbacks.onclose = this.onclose;
+          }
+        }, 10);
+      }
+
+      close(_code?: number, _reason?: string): void {
+        if (this.onclose) {
+          this.onclose({ code: 1000, reason: "normal close" });
+        }
+      }
+    }
+
+    const conn = await wsConnect({
+      url: "ws://test-reconnect:9999/ws",
+      authToken: "token",
+      afterEventId: 0,
+      reconnectDelay: 50,
+      webSocketImpl: FakeWebSocketWithReconnect as any,
+    });
+
+    // Should have 1 constructor call initially
+    expect(constructorCalls.length).toBe(1);
+
+    // Wait for hello handshake
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Trigger a reconnect by simulating server going away (code 1001)
+    if (callbacks.onclose) {
+      callbacks.onclose({ code: 1001, reason: "going away" });
+    }
+
+    // Wait for reconnect delay + connection
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    // Should now have 2 constructor calls (initial + reconnect)
+    expect(constructorCalls.length).toBe(2);
+    expect(constructorCalls[1]).toContain("ws://test-reconnect:9999/ws?token=token");
+
+    conn.close();
+  }, 10000);
+});
+
 describe("WebSocket client integration", () => {
   let workspace: TempWorkspace;
   let hub: TestHub;

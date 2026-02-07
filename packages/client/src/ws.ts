@@ -42,6 +42,8 @@ export interface WsConnectOptions {
   maxReconnectDelay?: number;
   /** Open timeout in ms (default: 10000) */
   openTimeout?: number;
+  /** WebSocket implementation (for Node.js <22 or custom implementations) */
+  webSocketImpl?: typeof WebSocket;
 }
 
 export interface WsConnection {
@@ -81,7 +83,14 @@ export async function wsConnect(options: WsConnectOptions): Promise<WsConnection
     reconnectDelay: initialReconnectDelay = 1000,
     maxReconnectDelay = 30000,
     openTimeout: openTimeoutMs = 10000,
+    webSocketImpl,
   } = options;
+
+  // Select WebSocket constructor - injected or global
+  const WebSocketCtor = webSocketImpl ?? globalThis.WebSocket;
+  if (!WebSocketCtor) {
+    throw new Error("WebSocket not available. Pass webSocketImpl option or use Node 22+.");
+  }
 
   let ws: WebSocket | null = null;
   let isConnected = false;
@@ -107,7 +116,7 @@ export async function wsConnect(options: WsConnectOptions): Promise<WsConnection
     }
 
     const wsUrl = `${url}?token=${encodeURIComponent(authToken)}`;
-    ws = new WebSocket(wsUrl);
+    ws = new WebSocketCtor(wsUrl);
 
     let handshakeComplete = false;
     let openTimeout: Timer | null = null;

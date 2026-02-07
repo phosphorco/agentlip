@@ -460,4 +460,211 @@ describe("startHub", () => {
       expect(true).toBe(true); // Always pass - this test is demonstrative
     });
   });
+
+  describe("idle auto-shutdown (daemon mode)", () => {
+    it("shuts down after idleShutdownMs with no activity", async () => {
+      const workspace = await createTempWorkspace();
+      const dbPath = join(workspace, ".agentlip", "db.sqlite3");
+
+      hub = await startHub({
+        workspaceRoot: workspace,
+        dbPath,
+        authToken: TEST_TOKEN,
+        idleShutdownMs: 200,
+        disableRateLimiting: true,
+      });
+
+      // Verify server.json exists
+      const serverJsonBefore = await readServerJson({ workspaceRoot: workspace });
+      expect(serverJsonBefore).not.toBeNull();
+
+      // Verify lock exists
+      const lockInfoBefore = await readLockInfo({ workspaceRoot: workspace });
+      expect(lockInfoBefore).not.toBeNull();
+
+      // Wait for idle shutdown to trigger (200ms + margin)
+      await Bun.sleep(400);
+
+      // Verify server is stopped (health check should fail)
+      let healthFailed = false;
+      try {
+        await fetch(`http://${hub.host}:${hub.port}/health`);
+      } catch {
+        healthFailed = true;
+      }
+      expect(healthFailed).toBe(true);
+
+      // Verify cleanup happened
+      const serverJsonAfter = await readServerJson({ workspaceRoot: workspace });
+      expect(serverJsonAfter).toBeNull();
+
+      const lockInfoAfter = await readLockInfo({ workspaceRoot: workspace });
+      expect(lockInfoAfter).toBeNull();
+
+      hub = null; // Prevent afterEach from trying to stop again
+    });
+
+    it("does not shut down when WS client is connected", async () => {
+      const workspace = await createTempWorkspace();
+      const dbPath = join(workspace, ".agentlip", "db.sqlite3");
+
+      hub = await startHub({
+        workspaceRoot: workspace,
+        dbPath,
+        authToken: TEST_TOKEN,
+        idleShutdownMs: 200,
+        disableRateLimiting: true,
+      });
+
+      // Connect WebSocket
+      const wsUrl = `ws://${hub.host}:${hub.port}/ws?token=${TEST_TOKEN}`;
+      const ws = new WebSocket(wsUrl);
+
+      // Wait for connection to open
+      await new Promise<void>((resolve, reject) => {
+        ws.onopen = () => {
+          // Send hello message to complete handshake
+          ws.send(
+            JSON.stringify({
+              type: "hello",
+              after_event_id: 0,
+              subscriptions: { channels: [], topics: [] },
+            })
+          );
+          resolve();
+        };
+        ws.onerror = (err) => reject(err);
+        setTimeout(() => reject(new Error("WS timeout")), 5000);
+      });
+
+      // Wait for longer than idleShutdownMs
+      await Bun.sleep(400);
+
+      // Verify server is still running
+      const res = await fetch(`http://${hub.host}:${hub.port}/health`);
+      expect(res.status).toBe(200);
+
+      // Close WS and cleanup
+      ws.close();
+    });
+
+    it("does not shut down with ongoing HTTP activity", async () => {
+      const workspace = await createTempWorkspace();
+      const dbPath = join(workspace, ".agentlip", "db.sqlite3");
+
+      hub = await startHub({
+        workspaceRoot: workspace,
+        dbPath,
+        authToken: TEST_TOKEN,
+        idleShutdownMs: 300,
+        disableRateLimiting: true,
+      });
+
+      // Make HTTP requests periodically to keep activity alive
+      const hubRef = hub; // Capture reference for interval callback
+      const intervalId = setInterval(async () => {
+        try {
+          await fetch(`http://${hubRef.host}:${hubRef.port}/api/v1/_ping`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${TEST_TOKEN}` },
+          });
+        } catch {
+          // Ignore errors (server may have stopped)
+        }
+      }, 100);
+
+      // Wait for longer than idleShutdownMs
+      await Bun.sleep(500);
+
+      // Verify server is still running
+      const res = await fetch(`http://${hub.host}:${hub.port}/health`);
+      expect(res.status).toBe(200);
+
+      // Stop making requests and cleanup
+      clearInterval(intervalId);
+    });
+
+    it("race safety: does not shut down if activity happens right before shutdown", async () => {
+      const workspace = await createTempWorkspace();
+      const dbPath = join(workspace, ".agentlip", "db.sqlite3");
+
+      hub = await startHub({
+        workspaceRoot: workspace,
+        dbPath,
+        authToken: TEST_TOKEN,
+        idleShutdownMs: 200,
+        disableRateLimiting: true,
+      });
+
+      // Wait until just before idle shutdown would trigger
+      await Bun.sleep(180);
+
+      // Make a request to reset activity
+      await fetch(`http://${hub.host}:${hub.port}/api/v1/_ping`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${TEST_TOKEN}` },
+      });
+
+      // Wait a bit more (past the original idle timeout)
+      await Bun.sleep(100);
+
+      // Verify server is still running (activity reset the timer)
+      const res = await fetch(`http://${hub.host}:${hub.port}/health`);
+      expect(res.status).toBe(200);
+    });
+
+    it("does not activate without workspaceRoot (non-daemon mode)", async () => {
+      hub = await startHub({
+        authToken: TEST_TOKEN,
+        idleShutdownMs: 200, // Should be ignored in non-daemon mode
+        disableRateLimiting: true,
+      });
+
+      // Wait for longer than idleShutdownMs
+      await Bun.sleep(400);
+
+      // Verify server is still running (idle shutdown not active)
+      const res = await fetch(`http://${hub.host}:${hub.port}/health`);
+      expect(res.status).toBe(200);
+    });
+
+    it("health checks do not reset idle timer", async () => {
+      const workspace = await createTempWorkspace();
+      const dbPath = join(workspace, ".agentlip", "db.sqlite3");
+
+      hub = await startHub({
+        workspaceRoot: workspace,
+        dbPath,
+        authToken: TEST_TOKEN,
+        idleShutdownMs: 200,
+        disableRateLimiting: true,
+      });
+
+      // Make health checks periodically (should NOT prevent idle shutdown)
+      const hubRef = hub; // Capture reference for interval callback
+      const intervalId = setInterval(async () => {
+        try {
+          await fetch(`http://${hubRef.host}:${hubRef.port}/health`);
+        } catch {
+          // Ignore errors (server may have stopped)
+        }
+      }, 50);
+
+      // Wait for idle shutdown to trigger (200ms + margin)
+      await Bun.sleep(400);
+
+      clearInterval(intervalId);
+
+      // Verify server is stopped (health checks should NOT prevent shutdown)
+      let healthFailed = false;
+      try {
+        await fetch(`http://${hub.host}:${hub.port}/health`);
+      } catch {
+        healthFailed = true;
+      }
+      expect(healthFailed).toBe(true);
+
+      hub = null; // Prevent afterEach from trying to stop again
+    });
+  });
 });

@@ -22,7 +22,14 @@ jobs:
         with:
           bun-version: 1.3.8
       
-      - name: Setup Node.js for npm publish
+      - name: Setup Node.js for npm publish (OIDC)
+        if: vars.USE_NPM_TOKEN != '1'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Node.js for npm publish (token fallback)
+        if: vars.USE_NPM_TOKEN == '1'
         uses: actions/setup-node@v4
         with:
           node-version: '22'

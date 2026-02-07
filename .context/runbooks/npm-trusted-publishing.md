@@ -137,7 +137,31 @@ https://github.com/phosphorco/agentlip/actions/workflows/publish.yml
 
 ---
 
-### 2. Missing provenance on published package
+### 2. `Access token expired or revoked` and/or `404 Not Found` during publish
+
+**Symptom:** CI fails with a combination of messages like:
+- `npm notice Access token expired or revoked. Please try logging in again.`
+- `npm ERR! 404 Not Found - PUT https://registry.npmjs.org/@agentlip%2f<package> - Not found`
+
+**Why this happens:**
+- npm may return `404 Not Found` for authorization failures, especially for scoped packages.
+- If Trusted Publishing is misconfigured, npm will reject the OIDC-based publish even though provenance signing may still run.
+
+**Fix:**
+1. Re-check Trusted Publishing config for the specific package:
+   - Provider: GitHub Actions
+   - Repo owner: `phosphorco`
+   - Repo name: `agentlip`
+   - Workflow filename: `publish.yml`
+   - Environment name: (blank)
+2. Confirm the workflow has `permissions: id-token: write`.
+3. Confirm the workflow uses `actions/setup-node` with:
+   - `registry-url: https://registry.npmjs.org` (required for OIDC token exchange)
+4. If you removed the `registry-url` setup, you may see `npm error ENEEDAUTH need auth` (OIDC auth is not being configured) — restore the `registry-url` config.
+
+---
+
+### 3. Missing provenance on published package
 
 **Symptom:** Package published successfully, but npm page shows no provenance badge.
 
@@ -161,7 +185,7 @@ https://github.com/phosphorco/agentlip/actions/workflows/publish.yml
 
 ---
 
-### 3. Wrong repo or workflow referenced
+### 4. Wrong repo or workflow referenced
 
 **Symptom:** 403 Forbidden, but Trusted Publishing is configured.
 
@@ -177,7 +201,7 @@ https://github.com/phosphorco/agentlip/actions/workflows/publish.yml
 
 ---
 
-### 4. Workflow runs but publishes with token instead of OIDC
+### 5. Workflow runs but publishes with token instead of OIDC
 
 **Symptom:** Packages published successfully, but logs show "token fallback" steps.
 

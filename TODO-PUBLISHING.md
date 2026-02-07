@@ -38,7 +38,7 @@ Key changes included:
   - updated to match new behaviors + exit codes
 - `README.md`
   - added “Release Troubleshooting” index
-  - clarified where to set `USE_NPM_TOKEN` (Repo Settings → Variables → Actions)
+  - removed token fallback (`USE_NPM_TOKEN`); CI now publishes via OIDC only
 
 Verification I ran after integration:
 - `bash -n scripts/*.sh`
@@ -62,5 +62,5 @@ Added a checklist comment to **bd-2bg.4** with a tight “rehearsal run-sheet”
 - **Do now:** finish **bd-2bg.4** rehearsal publish (it’s still the critical path).
 - **After bd-2bg.4 goes green:** we can immediately pick up (now unblocked)
   - `bd-23k.3` (publish.yml maintainability/safety gate)
-  - `bd-2bg.5` (remove NPM_TOKEN fallback + delete secret)
+  - `bd-2bg.5` (remove token fallback + delete secret)
 - **Then:** `bd-23k.5` close-out becomes unblocked (wrap remaining debt into follow-up beads if any).

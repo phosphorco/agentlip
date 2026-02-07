@@ -13,6 +13,7 @@
 - [ ] All tests pass: `bun test`
 - [ ] Typecheck passes: `bun run typecheck`
 - [ ] **OIDC path (preferred):** Trusted Publishing configured for all 6 packages (see [npm-trusted-publishing.md](./npm-trusted-publishing.md))
+  - Requires **npm CLI >= 11.5.1** in CI (Trusted Publishing requirement). Our publish workflow uses **Node 24+** to satisfy this.
 - [ ] **Token fallback:** If `USE_NPM_TOKEN=1` is set, ensure `NPM_TOKEN` secret is configured (Settings → Secrets → Actions)
 
 ---

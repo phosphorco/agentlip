@@ -25,7 +25,9 @@ jobs:
       - name: Setup Node.js for npm publish
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          # npm Trusted Publishing (OIDC) requires npm CLI >= 11.5.1.
+          # Node 24 ships with npm 11.x on GitHub-hosted runners.
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
       
       - name: Install dependencies

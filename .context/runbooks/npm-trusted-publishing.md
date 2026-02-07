@@ -25,6 +25,7 @@ npm Trusted Publishing allows GitHub Actions to publish packages without storing
 
 - [ ] npm account with publish access to all packages
 - [ ] Access to package settings at npmjs.org
+- [ ] CI uses **npm CLI >= 11.5.1** (Trusted Publishing requirement). Our `publish.yml` should run with **Node 24+** (ships npm 11.x on GitHub-hosted runners).
 - [ ] Packages you'll configure:
   - `@agentlip/protocol`
   - `@agentlip/kernel`

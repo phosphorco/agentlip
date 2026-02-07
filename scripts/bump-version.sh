@@ -4,11 +4,19 @@ set -euo pipefail
 # Cleanup trap for atomic writes
 TEMP_FILES=()
 cleanup() {
+  # Preserve the original exit code; trap handlers can otherwise clobber it.
+  local exit_code=$?
+
+  # Prevent recursion if we call exit below.
+  trap - EXIT ERR INT TERM
+
   if [[ ${#TEMP_FILES[@]} -gt 0 ]]; then
     for tmp in "${TEMP_FILES[@]}"; do
-      [[ -f "$tmp" ]] && rm -f "$tmp"
+      rm -f "$tmp" || true
     done
   fi
+
+  exit $exit_code
 }
 trap cleanup EXIT ERR INT TERM
 

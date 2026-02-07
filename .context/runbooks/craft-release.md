@@ -12,7 +12,8 @@
 - [ ] On `main` branch: `git branch --show-current`
 - [ ] All tests pass: `bun test`
 - [ ] Typecheck passes: `bun run typecheck`
-- [ ] GitHub `NPM_TOKEN` secret is configured (Settings → Secrets → Actions)
+- [ ] **OIDC path (preferred):** Trusted Publishing configured for all 6 packages (see [npm-trusted-publishing.md](./npm-trusted-publishing.md))
+- [ ] **Token fallback:** If `USE_NPM_TOKEN=1` is set, ensure `NPM_TOKEN` secret is configured (Settings → Secrets → Actions)
 
 ---
 
@@ -91,6 +92,8 @@ npm view agentlip version
 
 **Also verify:**
 - npm package pages updated (e.g., `https://www.npmjs.com/package/@agentlip/client`)
+- **Provenance badge** visible on npm package pages (if OIDC path was used)
+- CI logs show `Publish ... (OIDC)` steps ran (not `(token fallback)`)
 
 ---
 
@@ -192,7 +195,17 @@ npm unpublish @agentlip/<pkg>@0.2.0
 
 ---
 
-### 5. Changelog Missing Entries
+### 5. Publish Fails: 403 Forbidden (OIDC)
+
+**Symptom:** CI fails with `403 Forbidden` on OIDC publish step.
+
+**Cause:** Trusted Publishing not configured for that package, or config mismatch.
+
+**Fix:** See [npm-trusted-publishing.md](./npm-trusted-publishing.md) → Troubleshooting → "403 Forbidden during publish"
+
+---
+
+### 6. Changelog Missing Entries
 
 **Symptom:** `CHANGELOG.md` has no content between releases.
 

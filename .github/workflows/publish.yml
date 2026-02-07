@@ -60,14 +60,30 @@ jobs:
             fi
           done
           echo "All packages at version $VERSION ✓"
+
+      - name: Compute npm dist-tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [[ "$VERSION" == *-* ]]; then
+            # npm@11+ requires an explicit dist-tag for prerelease publishes.
+            # Use the prerelease identifier as dist-tag (e.g. 0.1.1-rc.1 -> tag "rc").
+            PREID="${VERSION#*-}"
+            PREID="${PREID%%.*}"
+            DIST_TAG="$PREID"
+          else
+            DIST_TAG="latest"
+          fi
+
+          echo "NPM_DIST_TAG=$DIST_TAG" >> "$GITHUB_ENV"
+          echo "Using npm dist-tag: $DIST_TAG"
       
       - name: Publish @agentlip/protocol (OIDC)
         if: vars.USE_NPM_TOKEN != '1'
-        run: cd packages/protocol && npm publish --access public --provenance
+        run: cd packages/protocol && npm publish --access public --tag $NPM_DIST_TAG --provenance
       
       - name: Publish @agentlip/protocol (token fallback)
         if: vars.USE_NPM_TOKEN == '1'
-        run: cd packages/protocol && npm publish --access public
+        run: cd packages/protocol && npm publish --access public --tag $NPM_DIST_TAG
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       
@@ -76,11 +92,11 @@ jobs:
       
       - name: Publish @agentlip/kernel (OIDC)
         if: vars.USE_NPM_TOKEN != '1'
-        run: cd packages/kernel && npm publish --access public --provenance
+        run: cd packages/kernel && npm publish --access public --tag $NPM_DIST_TAG --provenance
       
       - name: Publish @agentlip/kernel (token fallback)
         if: vars.USE_NPM_TOKEN == '1'
-        run: cd packages/kernel && npm publish --access public
+        run: cd packages/kernel && npm publish --access public --tag $NPM_DIST_TAG
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       
@@ -89,11 +105,11 @@ jobs:
       
       - name: Publish @agentlip/workspace (OIDC)
         if: vars.USE_NPM_TOKEN != '1'
-        run: cd packages/workspace && npm publish --access public --provenance
+        run: cd packages/workspace && npm publish --access public --tag $NPM_DIST_TAG --provenance
       
       - name: Publish @agentlip/workspace (token fallback)
         if: vars.USE_NPM_TOKEN == '1'
-        run: cd packages/workspace && npm publish --access public
+        run: cd packages/workspace && npm publish --access public --tag $NPM_DIST_TAG
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       
@@ -102,11 +118,11 @@ jobs:
       
       - name: Publish @agentlip/client (OIDC)
         if: vars.USE_NPM_TOKEN != '1'
-        run: cd packages/client && npm publish --access public --provenance
+        run: cd packages/client && npm publish --access public --tag $NPM_DIST_TAG --provenance
       
       - name: Publish @agentlip/client (token fallback)
         if: vars.USE_NPM_TOKEN == '1'
-        run: cd packages/client && npm publish --access public
+        run: cd packages/client && npm publish --access public --tag $NPM_DIST_TAG
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       
@@ -115,11 +131,11 @@ jobs:
       
       - name: Publish agentlip (CLI) (OIDC)
         if: vars.USE_NPM_TOKEN != '1'
-        run: cd packages/cli && npm publish --provenance
+        run: cd packages/cli && npm publish --tag $NPM_DIST_TAG --provenance
       
       - name: Publish agentlip (CLI) (token fallback)
         if: vars.USE_NPM_TOKEN == '1'
-        run: cd packages/cli && npm publish
+        run: cd packages/cli && npm publish --tag $NPM_DIST_TAG
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       
@@ -128,11 +144,11 @@ jobs:
       
       - name: Publish @agentlip/hub (OIDC)
         if: vars.USE_NPM_TOKEN != '1'
-        run: cd packages/hub && npm publish --access public --provenance
+        run: cd packages/hub && npm publish --access public --tag $NPM_DIST_TAG --provenance
       
       - name: Publish @agentlip/hub (token fallback)
         if: vars.USE_NPM_TOKEN == '1'
-        run: cd packages/hub && npm publish --access public
+        run: cd packages/hub && npm publish --access public --tag $NPM_DIST_TAG
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       

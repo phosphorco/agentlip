@@ -104,14 +104,31 @@ https://github.com/phosphorco/agentlip/actions/workflows/publish.yml
 
 **Expected outcome:**
 - All publish steps succeed (OIDC path used, no token fallback)
-- Packages appear on npm with provenance badge
+- The published version is present on npm (works for prereleases too):
+  - `npm view @agentlip/client@0.2.0-rc.1 version` → `0.2.0-rc.1`
+- For prereleases, dist-tags include the prerelease channel (derived from the prerelease id, e.g. `rc`):
+  - `npm view @agentlip/client dist-tags` includes `rc: 0.2.0-rc.1`
+- Provenance badge visible on npm package pages
 - Smoke test passes
 
 ---
 
 ## Troubleshooting
 
-### 1. 403 Forbidden during publish
+### 1. Prerelease publish fails: must specify `--tag`
+
+**Symptom:** CI fails with:
+- `npm error You must specify a tag using --tag when publishing a prerelease version.`
+
+**Cause:** npm CLI v11+ requires an explicit dist-tag for prerelease versions (`x.y.z-...`). Our workflow computes a tag (for example `rc`) and passes `--tag` to all `npm publish` commands.
+
+**Fix:**
+- Ensure `.github/workflows/publish.yml` computes `NPM_DIST_TAG` and all `npm publish` commands include `--tag $NPM_DIST_TAG`.
+- Re-push the git tag so the publish workflow runs from the updated ref.
+
+---
+
+### 2. 403 Forbidden during publish
 
 **Symptom:** CI fails with `npm ERR! 403 Forbidden - PUT https://registry.npmjs.org/@agentlip/...`
 
@@ -138,7 +155,7 @@ https://github.com/phosphorco/agentlip/actions/workflows/publish.yml
 
 ---
 
-### 2. `Access token expired or revoked` and/or `404 Not Found` during publish
+### 3. `Access token expired or revoked` and/or `404 Not Found` during publish
 
 **Symptom:** CI fails with a combination of messages like:
 - `npm notice Access token expired or revoked. Please try logging in again.`
@@ -146,29 +163,34 @@ https://github.com/phosphorco/agentlip/actions/workflows/publish.yml
 
 **Why this happens:**
 - npm may return `404 Not Found` for authorization failures, especially for scoped packages.
-- If Trusted Publishing is misconfigured, npm will reject the OIDC-based publish even though provenance signing may still run.
+- **npm CLI is too old** (< 11.5.1): trusted publishing isn’t supported, so npm falls back to token auth.
+  - `actions/setup-node` exports a placeholder `NODE_AUTH_TOKEN=XXXXX-...` when you don’t provide a real token, which then fails with misleading `404`/`expired or revoked` messages.
+- Trusted Publishing is misconfigured: npm OIDC auth fails and may fall back to token auth.
 
 **Fix:**
-1. Re-check Trusted Publishing config for the specific package:
+1. Confirm CI is using **npm CLI >= 11.5.1** (Trusted Publishing requirement).
+   - Easiest: use **Node 24+** in `actions/setup-node`.
+2. Re-check Trusted Publishing config for the specific package:
    - Provider: GitHub Actions
    - Repo owner: `phosphorco`
    - Repo name: `agentlip`
    - Workflow filename: `publish.yml`
    - Environment name: (blank)
-2. Confirm the workflow has `permissions: id-token: write`.
-3. Confirm the workflow uses `actions/setup-node` with:
-   - `registry-url: https://registry.npmjs.org` (required for OIDC token exchange)
-4. If you removed the `registry-url` setup, you may see `npm error ENEEDAUTH need auth` (OIDC auth is not being configured) — restore the `registry-url` config.
+3. Confirm the workflow has `permissions: id-token: write`.
+4. Confirm the workflow uses `actions/setup-node` with `registry-url: https://registry.npmjs.org`.
+5. If you temporarily need to ship, set `USE_NPM_TOKEN=1` and use the token fallback path.
 
 ---
 
-### 3. Missing provenance on published package
+### 4. Missing provenance on published package
 
 **Symptom:** Package published successfully, but npm page shows no provenance badge.
 
 **Possible causes:**
-1. **`--provenance` flag omitted** from `npm publish` command
-2. **Token fallback used** instead of OIDC (provenance requires OIDC)
+1. Publish ran via **token fallback** instead of Trusted Publishing (OIDC).
+2. The source repo is **private** (npm provenance badges/attestations are not supported for private source repositories).
+3. Provenance generation was explicitly disabled (`provenance=false` in config or `NPM_CONFIG_PROVENANCE=false`).
+4. npm CLI is too old for provenance/trusted publishing.
 
 **Fix:**
 ```bash
@@ -176,17 +198,17 @@ https://github.com/phosphorco/agentlip/actions/workflows/publish.yml
 # OIDC path: "Publish @agentlip/<pkg> (OIDC)"
 # Token path: "Publish @agentlip/<pkg> (token fallback)"
 
-# If token fallback ran, check GitHub Actions variable:
-# Settings → Variables → Actions → USE_NPM_TOKEN
-# Should be unset or not equal to '1'
+# Trusted Publishing should generate provenance automatically.
+# If token fallback ran, either:
+#   - switch back to OIDC (unset USE_NPM_TOKEN), or
+#   - add --provenance to token publishes if you still want attestations.
 
-# If OIDC ran but no provenance, check publish command:
-# OIDC steps should use: npm publish --provenance
+# Confirm the repo is public and provenance is not disabled.
 ```
 
 ---
 
-### 4. Wrong repo or workflow referenced
+### 5. Wrong repo or workflow referenced
 
 **Symptom:** 403 Forbidden, but Trusted Publishing is configured.
 
@@ -202,7 +224,7 @@ https://github.com/phosphorco/agentlip/actions/workflows/publish.yml
 
 ---
 
-### 5. Workflow runs but publishes with token instead of OIDC
+### 6. Workflow runs but publishes with token instead of OIDC
 
 **Symptom:** Packages published successfully, but logs show "token fallback" steps.
 

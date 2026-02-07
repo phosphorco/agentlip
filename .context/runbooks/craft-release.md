@@ -80,15 +80,25 @@ git push origin v0.2.0
 After CI completes:
 
 ```bash
-# Check all packages are published
-for pkg in protocol kernel workspace client cli hub; do
-  npm view @agentlip/$pkg version
-done
-# Expected: all return the new version (e.g., 0.2.0)
+VERSION="0.2.0" # or e.g. 0.2.0-rc.1
 
-# Check CLI package (unscoped)
-npm view agentlip version
-# Expected: the new version
+# Verify the exact version exists (works for stable + prerelease)
+for pkg in protocol kernel workspace client hub; do
+  npm view @agentlip/$pkg@${VERSION} version
+done
+npm view agentlip@${VERSION} version
+
+if [[ "$VERSION" != *-* ]]; then
+  # Stable release: "latest" should point at VERSION
+  for pkg in protocol kernel workspace client hub; do
+    npm view @agentlip/$pkg version
+  done
+  npm view agentlip version
+else
+  # Prerelease: workflow publishes under a non-latest dist-tag (derived from the prerelease id, e.g. "rc")
+  npm view @agentlip/client dist-tags
+  npm view agentlip dist-tags
+fi
 ```
 
 **Also verify:**

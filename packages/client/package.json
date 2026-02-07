@@ -21,7 +21,8 @@
     "!src/**/*.test.ts"
   ],
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./local": "./src/local.ts"
   },
   "dependencies": {
     "@agentlip/workspace": "^0.1.0",

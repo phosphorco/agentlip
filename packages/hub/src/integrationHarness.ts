@@ -153,6 +153,7 @@ export async function startTestHub(options?: {
   const server = await startHub({
     host: "127.0.0.1",
     port: 0, // Random available port
+    workspaceRoot,
     authToken,
     disableRateLimiting: rateLimitDisabled,
     enableFts: resolveFtsEnabled(enableFts),

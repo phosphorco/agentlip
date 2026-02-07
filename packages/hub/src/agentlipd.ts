@@ -13,9 +13,10 @@ if (typeof Bun === "undefined") {
 }
 
 import { readServerJson } from "./serverJson.js";
-import { discoverWorkspaceRoot } from "@agentlip/workspace";
+import { discoverWorkspaceRoot, discoverOrInitWorkspace } from "@agentlip/workspace";
 import { openDb } from "@agentlip/kernel";
 import type { HealthResponse } from "@agentlip/protocol";
+import { startHub, type HubServer } from "./index.js";
 
 interface StatusOptions {
   workspace?: string;
@@ -212,6 +213,145 @@ function printHumanStatus(result: StatusResult): void {
 }
 
 /**
+ * Options for the `up` command.
+ */
+interface UpOptions {
+  workspace?: string;
+  host?: string;
+  port?: number;
+  idleShutdownMs?: number;
+  json?: boolean;
+}
+
+/**
+ * Start the hub daemon (daemon mode with writer lock).
+ */
+export async function upCommand(options: UpOptions): Promise<number> {
+  const {
+    workspace,
+    host = "127.0.0.1",
+    port = 0,
+    idleShutdownMs,
+    json = false,
+  } = options;
+
+  try {
+    // Discover or initialize workspace
+    const discovered = await discoverOrInitWorkspace(workspace);
+    const { root: workspaceRoot, dbPath } = discovered;
+
+    // Start hub in daemon mode
+    let hub: HubServer;
+    try {
+      hub = await startHub({
+        host,
+        port,
+        workspaceRoot,
+        dbPath,
+        idleShutdownMs,
+      });
+    } catch (err: any) {
+      // Check for writer lock conflict
+      if (err?.message?.includes("Writer lock already held")) {
+        const errorMsg = {
+          error: "Hub already running",
+          code: "WRITER_LOCK_HELD",
+          workspace_root: workspaceRoot,
+          reason: err.message,
+        };
+
+        if (json) {
+          console.error(JSON.stringify(errorMsg, null, 2));
+        } else {
+          console.error("✗ Hub already running");
+          console.error(`  Workspace: ${workspaceRoot}`);
+          console.error(`  Reason: ${err.message}`);
+        }
+
+        return 10; // Exit code 10 = lock conflict
+      }
+
+      // Other startup errors
+      const errorMsg = {
+        error: "Hub startup failed",
+        code: "STARTUP_FAILED",
+        workspace_root: workspaceRoot,
+        reason: err?.message ?? String(err),
+      };
+
+      if (json) {
+        console.error(JSON.stringify(errorMsg, null, 2));
+      } else {
+        console.error("✗ Hub startup failed");
+        console.error(`  Workspace: ${workspaceRoot}`);
+        console.error(`  Error: ${err?.message ?? String(err)}`);
+      }
+
+      return 1;
+    }
+
+    // Print connection info (never include auth token)
+    const connInfo = {
+      status: "running",
+      host: hub.host,
+      port: hub.port,
+      workspace_root: workspaceRoot,
+      instance_id: hub.instanceId,
+    };
+
+    if (json) {
+      console.log(JSON.stringify(connInfo, null, 2));
+    } else {
+      console.log("✓ Hub started");
+      console.log(`  Host:      ${hub.host}`);
+      console.log(`  Port:      ${hub.port}`);
+      console.log(`  Workspace: ${workspaceRoot}`);
+      console.log(`  Instance:  ${hub.instanceId}`);
+    }
+
+    // Setup signal handlers for graceful shutdown
+    const shutdown = async (signal: string) => {
+      if (!json) {
+        console.log(`\nReceived ${signal}, shutting down gracefully...`);
+      }
+
+      try {
+        await hub.stop();
+        if (!json) {
+          console.log("✓ Hub stopped");
+        }
+        process.exit(0);
+      } catch (err) {
+        console.error("Error during shutdown:", err);
+        process.exit(1);
+      }
+    };
+
+    process.on("SIGINT", () => shutdown("SIGINT"));
+    process.on("SIGTERM", () => shutdown("SIGTERM"));
+
+    // Keep process alive (await never resolves unless signal received)
+    await new Promise(() => {});
+
+    return 0;
+  } catch (err: any) {
+    const errorMsg = {
+      error: "Unexpected error",
+      code: "UNEXPECTED_ERROR",
+      reason: err?.message ?? String(err),
+    };
+
+    if (json) {
+      console.error(JSON.stringify(errorMsg, null, 2));
+    } else {
+      console.error("✗ Unexpected error:", err?.message ?? String(err));
+    }
+
+    return 1;
+  }
+}
+
+/**
  * Main CLI entry point.
  */
 function printHelp(): void {
@@ -219,8 +359,9 @@ function printHelp(): void {
   console.log();
   console.log("Commands:");
   console.log("  status   Check hub health using server.json and validate db_id");
+  console.log("  up       Start hub daemon");
   console.log();
-  console.log("Run: agentlipd status --help");
+  console.log("Run: agentlipd <command> --help");
 }
 
 function printStatusHelp(): void {
@@ -239,6 +380,28 @@ function printStatusHelp(): void {
   console.log("  1  Other errors (DB mismatch, etc.)");
 }
 
+function printUpHelp(): void {
+  console.log("Usage: agentlipd up [options]");
+  console.log();
+  console.log("Start hub daemon in workspace.");
+  console.log();
+  console.log("Options:");
+  console.log("  --workspace <path>       Workspace root (default: auto-discover or init at cwd)");
+  console.log("  --host <host>            Bind host (default: 127.0.0.1)");
+  console.log("  --port <port>            Bind port (default: 0 = random)");
+  console.log("  --idle-shutdown-ms <ms>  Auto-shutdown after idle timeout (optional)");
+  console.log("  --json                   Output as JSON");
+  console.log("  --help, -h               Show this help");
+  console.log();
+  console.log("Exit codes:");
+  console.log("  0   Clean shutdown");
+  console.log("  1   Error");
+  console.log("  10  Writer lock conflict (hub already running)");
+  console.log();
+  console.log("Note: Auth token is automatically generated and stored in server.json.");
+  console.log("      Token is never printed to stdout/stderr.");
+}
+
 export async function main(argv: string[] = process.argv.slice(2)) {
   const [command, ...args] = argv;
 
@@ -247,56 +410,116 @@ export async function main(argv: string[] = process.argv.slice(2)) {
     process.exit(0);
   }
 
-  if (command !== "status") {
-    console.error(`Unknown command: ${command}`);
-    console.error("Use --help for usage information");
+  if (command === "status") {
+    const options: StatusOptions = {};
+
+    // Parse status args
+    for (let i = 0; i < args.length; i++) {
+      const arg = args[i];
+      if (arg === "--workspace" || arg === "-w") {
+        const value = args[++i];
+        if (!value) {
+          console.error("--workspace requires a value");
+          process.exit(1);
+        }
+        options.workspace = value;
+      } else if (arg === "--json") {
+        options.json = true;
+      } else if (arg === "--help" || arg === "-h") {
+        printStatusHelp();
+        process.exit(0);
+      } else {
+        console.error(`Unknown argument: ${arg}`);
+        console.error("Use --help for usage information");
+        process.exit(1);
+      }
+    }
+
+    const result = await checkStatus(options);
+
+    if (options.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      printHumanStatus(result);
+    }
+
+    if (result.status === "running") {
+      process.exit(0);
+    }
+
+    if (
+      result.status === "not_running" ||
+      result.status === "unreachable" ||
+      result.status === "stale"
+    ) {
+      process.exit(3);
+    }
+
     process.exit(1);
   }
 
-  const options: StatusOptions = {};
+  if (command === "up") {
+    const options: UpOptions = {};
 
-  // Parse status args
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (arg === "--workspace" || arg === "-w") {
-      const value = args[++i];
-      if (!value) {
-        console.error("--workspace requires a value");
+    // Parse up args
+    for (let i = 0; i < args.length; i++) {
+      const arg = args[i];
+      if (arg === "--workspace" || arg === "-w") {
+        const value = args[++i];
+        if (!value) {
+          console.error("--workspace requires a value");
+          process.exit(1);
+        }
+        options.workspace = value;
+      } else if (arg === "--host") {
+        const value = args[++i];
+        if (!value) {
+          console.error("--host requires a value");
+          process.exit(1);
+        }
+        options.host = value;
+      } else if (arg === "--port") {
+        const value = args[++i];
+        if (!value) {
+          console.error("--port requires a value");
+          process.exit(1);
+        }
+        const parsed = parseInt(value, 10);
+        if (!Number.isFinite(parsed) || parsed < 0 || parsed > 65535) {
+          console.error("--port must be a number between 0 and 65535");
+          process.exit(1);
+        }
+        options.port = parsed;
+      } else if (arg === "--idle-shutdown-ms") {
+        const value = args[++i];
+        if (!value) {
+          console.error("--idle-shutdown-ms requires a value");
+          process.exit(1);
+        }
+        const parsed = parseInt(value, 10);
+        if (!Number.isFinite(parsed) || parsed < 0) {
+          console.error("--idle-shutdown-ms must be a positive number");
+          process.exit(1);
+        }
+        options.idleShutdownMs = parsed;
+      } else if (arg === "--json") {
+        options.json = true;
+      } else if (arg === "--help" || arg === "-h") {
+        printUpHelp();
+        process.exit(0);
+      } else {
+        console.error(`Unknown argument: ${arg}`);
+        console.error("Use --help for usage information");
         process.exit(1);
       }
-      options.workspace = value;
-    } else if (arg === "--json") {
-      options.json = true;
-    } else if (arg === "--help" || arg === "-h") {
-      printStatusHelp();
-      process.exit(0);
-    } else {
-      console.error(`Unknown argument: ${arg}`);
-      console.error("Use --help for usage information");
-      process.exit(1);
     }
+
+    const exitCode = await upCommand(options);
+    process.exit(exitCode);
   }
 
-  const result = await checkStatus(options);
-
-  if (options.json) {
-    console.log(JSON.stringify(result, null, 2));
-  } else {
-    printHumanStatus(result);
-  }
-
-  if (result.status === "running") {
-    process.exit(0);
-  }
-
-  if (
-    result.status === "not_running" ||
-    result.status === "unreachable" ||
-    result.status === "stale"
-  ) {
-    process.exit(3);
-  }
-
+  console.error(`Unknown command: ${command}`);
+  console.error("Use --help for usage information");
   process.exit(1);
 }
 

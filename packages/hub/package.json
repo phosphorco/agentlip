@@ -29,8 +29,8 @@
     "agentlipd": "./src/agentlipd.ts"
   },
   "dependencies": {
-    "@agentlip/protocol": "^0.1.0",
-    "@agentlip/workspace": "^0.1.0",
-    "@agentlip/kernel": "^0.1.0"
+    "@agentlip/protocol": "^0.1.1-rc.1",
+    "@agentlip/workspace": "^0.1.1-rc.1",
+    "@agentlip/kernel": "^0.1.1-rc.1"
   }
 }

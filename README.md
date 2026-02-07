@@ -160,21 +160,15 @@ npm adduser --registry http://127.0.0.1:4873
 
 Hub/CLI packages run on **Bun** (not Node.js). SDK packages can be imported from Node.js v22+ (ESM-only); the local client helper still requires Bun installed to spawn `agentlipd`.
 
-### Publishing Security (OIDC Migration)
+### Publishing Security (OIDC)
 
-Agentlip is migrating to **npm Trusted Publishing** via GitHub Actions OIDC, which replaces long-lived `NPM_TOKEN` secrets with short-lived tokens and enables provenance attestation.
-
-**Current state:**
-- Publishing workflow supports both OIDC and token-based fallback
-- Fallback controlled by GitHub Actions variable: `USE_NPM_TOKEN`
-- When `USE_NPM_TOKEN` is unset or `!= '1'`, OIDC is used (with `--provenance`)
-- When `USE_NPM_TOKEN == '1'`, token fallback is used (no provenance)
+Agentlip uses **npm Trusted Publishing** via GitHub Actions OIDC, which provides short-lived tokens and provenance attestation.
 
 **Configuration:**  
-See `.context/runbooks/npm-trusted-publishing.md` for manual npm Trusted Publishing setup (required for all 6 packages).
+See `.context/runbooks/npm-trusted-publishing.md` for npm Trusted Publishing setup (required for all 6 packages).
 
-**Rollback:**  
-If OIDC publishing fails, set `USE_NPM_TOKEN='1'` in GitHub Actions variables (Repo Settings → Variables → Actions) to temporarily use token-based publishing.
+**Emergency publish:**  
+If OIDC publishing fails, publish manually from your local machine with a personal npm token (see Recovery section below). CI uses OIDC exclusively.
 
 ### Release Flow
 
@@ -198,7 +192,7 @@ Agentlip uses [Craft](https://craft.sentry.dev) for automated release preparatio
    - Publishes packages in dependency order: `protocol` → `kernel` → `workspace` → `client` → `cli` → `hub`
    - Waits 5s between packages for npm propagation
    - Post-publish smoke test: installs `@agentlip/client` and verifies import
-   - Uses OIDC by default; falls back to token if `USE_NPM_TOKEN='1'`
+   - Uses OIDC with provenance attestation
 
 **See:** 
 - `.context/runbooks/craft-release.md` for step-by-step release instructions
@@ -224,9 +218,7 @@ For testing the publish flow before releasing:
 ### Prerequisites
 
 - npm account with access to the `@agentlip` scope
-- **Either:**
-  - **OIDC (recommended):** npm Trusted Publishing configured for all packages (see `.context/runbooks/npm-trusted-publishing.md`)
-  - **Token fallback:** `NPM_TOKEN` (Automation type) configured as a GitHub repository secret + `USE_NPM_TOKEN='1'` set in GitHub Actions variables (Repo Settings → Variables → Actions)
+- npm Trusted Publishing configured for all packages (see `.context/runbooks/npm-trusted-publishing.md`)
 - Bun installed locally
 
 ### Recovery
@@ -242,11 +234,13 @@ done
 If `client` failed but `protocol`, `kernel`, `workspace` succeeded:
 
 - Prefer re-running CI with a new patch version.
-- If you must publish the remaining package manually, use token auth:
+- If you must publish the remaining package manually (emergency only):
 
 ```bash
+# Authenticate with your personal npm token
+npm login
 cd packages/client
-NODE_AUTH_TOKEN="$NPM_TOKEN" npm publish --access public
+npm publish --access public
 ```
 
 **Unpublish bad version** (within 72 hours only):
@@ -261,7 +255,7 @@ After 72 hours, publish a patch version instead.
 For help with release and publish workflows, see:
 
 - [Craft Release Workflow](.context/runbooks/craft-release.md) — Step-by-step release instructions + common failures
-- [npm Trusted Publishing (OIDC)](.context/runbooks/npm-trusted-publishing.md) — OIDC setup, troubleshooting, and token fallback
+- [npm Trusted Publishing (OIDC)](.context/runbooks/npm-trusted-publishing.md) — OIDC setup and troubleshooting
 - [Local Registry Testing](.context/runbooks/local-registry-testing.md) — Test publish flow with Verdaccio before releasing
 
 ## Quality Gates

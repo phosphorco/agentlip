@@ -75,7 +75,7 @@ Fill in the following values (same for all 6 packages):
 **Notes:**
 - **Workflow filename:** Must match `.github/workflows/publish.yml` exactly (case-sensitive)
 - **Environment name:** Only required if the workflow uses GitHub Environments for approvals (we don't)
-- The configuration is **per-package** — you cannot configure Trusted Publishing at the org or scope level
+- The configuration is **per-package** - you cannot configure Trusted Publishing at the org or scope level
 
 ### 3. Save and Verify
 
@@ -163,9 +163,8 @@ https://github.com/phosphorco/agentlip/actions/workflows/publish.yml
 
 **Why this happens:**
 - npm may return `404 Not Found` for authorization failures, especially for scoped packages.
-- **npm CLI is too old** (< 11.5.1): trusted publishing isn’t supported, so npm falls back to token auth.
-  - `actions/setup-node` exports a placeholder `NODE_AUTH_TOKEN=XXXXX-...` when you don’t provide a real token, which then fails with misleading `404`/`expired or revoked` messages.
-- Trusted Publishing is misconfigured: npm OIDC auth fails and may fall back to token auth.
+- **npm CLI is too old** (< 11.5.1): trusted publishing isn't supported.
+- Trusted Publishing is misconfigured: npm OIDC auth fails.
 
 **Fix:**
 1. Confirm CI is using **npm CLI >= 11.5.1** (Trusted Publishing requirement).
@@ -178,7 +177,7 @@ https://github.com/phosphorco/agentlip/actions/workflows/publish.yml
    - Environment name: (blank)
 3. Confirm the workflow has `permissions: id-token: write`.
 4. Confirm the workflow uses `actions/setup-node` with `registry-url: https://registry.npmjs.org`.
-5. If you temporarily need to ship, set `USE_NPM_TOKEN=1` and use the token fallback path.
+5. If you must ship urgently, use manual local publish (see Emergency Fallback section).
 
 ---
 
@@ -187,23 +186,16 @@ https://github.com/phosphorco/agentlip/actions/workflows/publish.yml
 **Symptom:** Package published successfully, but npm page shows no provenance badge.
 
 **Possible causes:**
-1. Publish ran via **token fallback** instead of Trusted Publishing (OIDC).
-2. The source repo is **private** (npm provenance badges/attestations are not supported for private source repositories).
-3. Provenance generation was explicitly disabled (`provenance=false` in config or `NPM_CONFIG_PROVENANCE=false`).
-4. npm CLI is too old for provenance/trusted publishing.
+1. The source repo is **private** (npm provenance badges/attestations are not supported for private source repositories).
+2. Provenance generation was explicitly disabled (`provenance=false` in config or `NPM_CONFIG_PROVENANCE=false`).
+3. npm CLI is too old for provenance/trusted publishing.
+4. Package was published manually (not via CI).
 
 **Fix:**
 ```bash
-# Check which publish path ran in CI logs:
-# OIDC path: "Publish @agentlip/<pkg> (OIDC)"
-# Token path: "Publish @agentlip/<pkg> (token fallback)"
-
-# Trusted Publishing should generate provenance automatically.
-# If token fallback ran, either:
-#   - switch back to OIDC (unset USE_NPM_TOKEN), or
-#   - add --provenance to token publishes if you still want attestations.
-
-# Confirm the repo is public and provenance is not disabled.
+# CI publishes with --provenance automatically.
+# Confirm the repo is public (required for provenance).
+# If published manually, provenance won't be attached unless you configure it locally.
 ```
 
 ---
@@ -224,91 +216,97 @@ https://github.com/phosphorco/agentlip/actions/workflows/publish.yml
 
 ---
 
-### 6. Workflow runs but publishes with token instead of OIDC
+### 6. OIDC token claims mismatch
 
-**Symptom:** Packages published successfully, but logs show "token fallback" steps.
+**Symptom:** 403 Forbidden even with Trusted Publishing configured correctly in npm UI.
 
-**Cause:** `USE_NPM_TOKEN` Actions variable is set to `'1'`.
+**Cause:** The OIDC token's claims don't match the configured publisher (e.g., after a repo rename or fork).
 
 **Fix:**
-```bash
-# Remove the variable:
-# GitHub → Settings → Variables → Actions → USE_NPM_TOKEN
-# Delete or set to '0'
+1. Check the GitHub Actions logs for the actual claims being sent
+2. Update Trusted Publishing config in npm to match:
+   - Repository owner: `phosphorco`
+   - Repository name: `agentlip`
+   - Workflow filename: `publish.yml`
+3. If repo was renamed or transferred, reconfigure all 6 packages
 
-# Re-run workflow:
-git tag -d v0.2.0-rc.1
-git tag v0.2.0-rc.1
-git push --force origin v0.2.0-rc.1
+---
+
+## Emergency Fallback: Manual Local Publish
+
+CI no longer supports token-based publishing. If OIDC publishing fails:
+
+### Option 1: Fix OIDC Configuration (Preferred)
+
+Most OIDC failures are configuration issues. See Troubleshooting above and fix the root cause.
+
+### Option 2: Manual Publish from Local Machine (Emergency)
+
+If CI is completely broken and you need to ship urgently:
+
+```bash
+# Authenticate with your personal npm token
+npm login
+
+# Publish in dependency order (from repo root)
+cd packages/protocol && npm publish --access public && cd ../..
+sleep 5
+cd packages/kernel && npm publish --access public && cd ../..
+sleep 5
+cd packages/workspace && npm publish --access public && cd ../..
+sleep 5
+cd packages/client && npm publish --access public && cd ../..
+sleep 5
+cd packages/cli && npm publish && cd ../..
+sleep 5
+cd packages/hub && npm publish --access public && cd ../..
 ```
 
----
-
-## Rollback to Token-Based Publishing
-
-If OIDC publishing fails and you need to revert temporarily:
-
-### Option 1: Use Token Fallback (Temporary)
-
-The current workflow includes a token-based fallback path for migration safety.
-
-**Steps:**
-1. Set GitHub Actions variable: `USE_NPM_TOKEN = '1'`
-   - GitHub → Settings → Variables → Actions → New repository variable
-   - Name: `USE_NPM_TOKEN`
-   - Value: `1`
-2. Ensure `NPM_TOKEN` secret is still configured:
-   - GitHub → Settings → Secrets → Actions → `NPM_TOKEN`
-3. Re-run the workflow
-
 **Limitations:**
-- No provenance attestation
-- Still requires a long-lived token
-
-### Option 2: Remove Trusted Publishing (Permanent Rollback)
-
-If you decide not to use OIDC publishing:
-
-1. **Remove Trusted Publishing from npm:**
-   - Visit each package's access settings
-   - Delete the GitHub Actions trusted publisher
-2. **Update workflow:**
-   - Remove `id-token: write` permission
-   - Remove `actions/setup-node` step
-   - Replace all publish steps with token-based equivalents:
-     ```yaml
-     - name: Publish @agentlip/protocol
-       run: cd packages/protocol && npm publish --access public
-       env:
-         NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-     ```
-   - Remove `--provenance` flags
-3. **Keep `NPM_TOKEN` secret** configured
+- No provenance attestation (unless you configure provenance locally)
+- Relies on personal credentials, not CI automation
+- Use only as emergency measure; fix OIDC config afterwards
 
 ---
 
-## Migration Checklist (Gate C → Gate E)
+## Migration Checklist (Completed)
 
-### Gate C: Initial Setup
-- [ ] Configure Trusted Publishing for `@agentlip/protocol`
-- [ ] Configure Trusted Publishing for `@agentlip/kernel`
-- [ ] Configure Trusted Publishing for `@agentlip/workspace`
-- [ ] Configure Trusted Publishing for `@agentlip/client`
-- [ ] Configure Trusted Publishing for `@agentlip/hub`
-- [ ] Configure Trusted Publishing for `agentlip`
-- [ ] Test with prerelease tag (Gate D)
+### Gate C: Initial Setup ✓
+- [x] Configure Trusted Publishing for `@agentlip/protocol`
+- [x] Configure Trusted Publishing for `@agentlip/kernel`
+- [x] Configure Trusted Publishing for `@agentlip/workspace`
+- [x] Configure Trusted Publishing for `@agentlip/client`
+- [x] Configure Trusted Publishing for `@agentlip/hub`
+- [x] Configure Trusted Publishing for `agentlip`
+- [x] Test with prerelease tag (Gate D)
 
-### Gate D: Rehearsal
-- [ ] Create prerelease tag (e.g., `v0.2.0-rc.1`)
-- [ ] Verify CI publishes via OIDC (check logs for "OIDC" steps)
-- [ ] Verify provenance badge on npm package pages
-- [ ] Smoke test passes
+### Gate D: Rehearsal ✓
+- [x] Create prerelease tag (e.g., `v0.1.1-rc.1`)
+- [x] Verify CI publishes via OIDC (check logs for "OIDC" steps)
+- [x] Verify provenance badge on npm package pages
+- [x] Smoke test passes
 
-### Gate E: Cleanup (After OIDC Proven)
+### Gate E: Cleanup (After OIDC Proven) — In Progress
 - [ ] Remove token fallback steps from `.github/workflows/publish.yml`
-- [ ] Remove `USE_NPM_TOKEN` variable from GitHub Actions (if set)
-- [ ] Delete `NPM_TOKEN` secret from GitHub (Settings → Secrets → Actions)
-- [ ] Update runbooks to remove token references
+- [ ] Delete `USE_NPM_TOKEN` variable from GitHub Actions (if set): Settings → Variables → Actions
+- [ ] Delete `NPM_TOKEN` secret from GitHub: Settings → Secrets → Actions
+- [ ] Update runbooks to remove token references ← this doc
+
+---
+
+## Post-Migration Cleanup (Manual Steps)
+
+After Gate E workflow changes are merged, complete these manual GitHub cleanup steps:
+
+1. **Delete `USE_NPM_TOKEN` variable** (if it exists):
+   - Go to: GitHub → Settings → Secrets and variables → Actions → Variables
+   - Find `USE_NPM_TOKEN` and delete it
+
+2. **Delete `NPM_TOKEN` secret**:
+   - Go to: GitHub → Settings → Secrets and variables → Actions → Secrets
+   - Find `NPM_TOKEN` and delete it
+
+These secrets/variables are no longer needed since CI publishes exclusively via OIDC.
 
 ---
 
@@ -322,5 +320,5 @@ If you decide not to use OIDC publishing:
 
 ## Related Runbooks
 
-- [Craft Release Workflow](./craft-release.md) — Tag-driven release process (unchanged by OIDC migration)
-- [Local Registry Testing](./local-registry-testing.md) — Test publishing flow with Verdaccio (uses token auth)
+- [Craft Release Workflow](./craft-release.md) - Tag-driven release process (unchanged by OIDC migration)
+- [Local Registry Testing](./local-registry-testing.md) - Test publishing flow with Verdaccio (uses token auth)

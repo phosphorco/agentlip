@@ -12,9 +12,8 @@
 - [ ] On `main` branch: `git branch --show-current`
 - [ ] All tests pass: `bun test`
 - [ ] Typecheck passes: `bun run typecheck`
-- [ ] **OIDC path (preferred):** Trusted Publishing configured for all 6 packages (see [npm-trusted-publishing.md](./npm-trusted-publishing.md))
+- [ ] Trusted Publishing configured for all 6 packages (see [npm-trusted-publishing.md](./npm-trusted-publishing.md))
   - Requires **npm CLI >= 11.5.1** in CI (Trusted Publishing requirement). Our publish workflow uses **Node 24+** to satisfy this.
-- [ ] **Token fallback:** If `USE_NPM_TOKEN=1` is set, ensure `NPM_TOKEN` secret is configured (Settings → Secrets → Actions)
 
 ---
 
@@ -103,8 +102,8 @@ fi
 
 **Also verify:**
 - npm package pages updated (e.g., `https://www.npmjs.com/package/@agentlip/client`)
-- **Provenance badge** visible on npm package pages (if OIDC path was used)
-- CI logs show `Publish ... (OIDC)` steps ran (not `(token fallback)`)
+- **Provenance badge** visible on npm package pages
+- CI logs show all publish steps completed successfully
 
 ---
 
@@ -170,20 +169,7 @@ git push origin --delete release/0.2.0
 
 ---
 
-### 3. Publish Fails: NPM_TOKEN invalid
-
-**Symptom:** CI publish step fails with `401 Unauthorized`.
-
-**Cause:** `NPM_TOKEN` secret is expired or missing.
-
-**Fix:**
-1. Generate new token at https://www.npmjs.com/settings/tokens (type: **Automation**)
-2. Update GitHub secret: Settings → Secrets → Actions → `NPM_TOKEN`
-3. Re-run the workflow (or re-tag: `git tag -d v0.2.0 && git tag v0.2.0 && git push --force origin v0.2.0`)
-
----
-
-### 4. Publish Fails: version already exists on npm
+### 3. Publish Fails: version already exists on npm
 
 **Symptom:** `npm publish` fails with "cannot publish over existing version".
 
@@ -206,7 +192,7 @@ npm unpublish @agentlip/<pkg>@0.2.0
 
 ---
 
-### 5. Publish Fails: 403 Forbidden (OIDC)
+### 4. Publish Fails: 403 Forbidden (OIDC)
 
 **Symptom:** CI fails with `403 Forbidden` on OIDC publish step.
 
@@ -216,7 +202,7 @@ npm unpublish @agentlip/<pkg>@0.2.0
 
 ---
 
-### 6. Changelog Missing Entries
+### 5. Changelog Missing Entries
 
 **Symptom:** `CHANGELOG.md` has no content between releases.
 
@@ -228,9 +214,9 @@ npm unpublish @agentlip/<pkg>@0.2.0
 
 ---
 
-## Manual Recovery: Publish Without CI
+## Manual Recovery: Publish Without CI (Emergency Only)
 
-If CI is completely broken:
+If CI is completely broken and you need to ship urgently:
 
 ```bash
 # Ensure all package.json files are at the release version
@@ -238,10 +224,10 @@ for pkg in protocol kernel workspace client cli hub; do
   echo "$pkg: $(jq -r .version packages/$pkg/package.json)"
 done
 
-# Set npm token (token fallback path; provenance will not be emitted)
-export NODE_AUTH_TOKEN="$NPM_TOKEN"
+# Authenticate with your personal npm token
+npm login
 
-# Publish in dependency order
+# Publish in dependency order (provenance will not be attached)
 cd packages/protocol && npm publish --access public && cd ../..
 sleep 5
 cd packages/kernel && npm publish --access public && cd ../..
@@ -254,6 +240,8 @@ cd packages/cli && npm publish && cd ../..
 sleep 5
 cd packages/hub && npm publish --access public && cd ../..
 ```
+
+**Note:** After manual recovery, fix the CI issue so future releases go through the automated OIDC workflow.
 
 ---
 

@@ -426,4 +426,48 @@ describe("UI endpoints", () => {
     expect(html).toContain("entity.type === 'topic'");
     expect(html).toContain("entity.type === 'message'");
   });
+
+  test("Topic messages page includes hash navigation for deep-linking", async () => {
+    const res = await fetch(`${baseUrl}/ui/topics/${topicId}`);
+    const html = await res.text();
+
+    // Verify hash handling function exists
+    expect(html).toContain("handleHashNavigation");
+    
+    // Verify hash detection logic
+    expect(html).toContain("location.hash");
+    expect(html).toContain("#msg_");
+    
+    // Verify highlight class
+    expect(html).toContain("highlighted");
+  });
+
+  test("Topic messages page shows hint when hash message not loaded", async () => {
+    const res = await fetch(`${baseUrl}/ui/topics/${topicId}`);
+    const html = await res.text();
+
+    // Verify hint message text
+    expect(html).toContain("Message not currently loaded");
+    expect(html).toContain("hash-hint");
+  });
+
+  test("Topic messages page assigns stable IDs to message elements", async () => {
+    const res = await fetch(`${baseUrl}/ui/topics/${topicId}`);
+    const html = await res.text();
+
+    // Verify ID assignment in renderMessage
+    expect(html).toContain("messageEl.id = 'msg_'");
+    
+    // Verify ID validation before assignment
+    expect(html).toContain("ID_REGEX");
+  });
+
+  test("Events page includes #msg_ hash in message entity links", async () => {
+    const res = await fetch(`${baseUrl}/ui/events`);
+    const html = await res.text();
+
+    // Verify hash link generation for messages
+    expect(html).toContain("#msg_");
+    expect(html).toContain("encodeURIComponent(entity.id)");
+  });
 });

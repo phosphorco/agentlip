@@ -293,6 +293,20 @@ function renderTopicMessagesPage(ctx: UiContext, topicId: string): Response {
     .message:last-child {
       border-bottom: none;
     }
+    .message.highlighted {
+      background: rgba(0, 102, 204, 0.1);
+      border-left: 3px solid var(--primary-color);
+      padding-left: 9px;
+    }
+    .hash-hint {
+      padding: 12px;
+      margin: 12px 0;
+      background: rgba(255, 165, 0, 0.1);
+      border: 1px solid rgba(255, 165, 0, 0.3);
+      border-radius: 6px;
+      color: #ff8c00;
+      font-size: 0.9em;
+    }
     .message-header {
       display: flex;
       gap: 8px;
@@ -411,6 +425,12 @@ function renderTopicMessagesPage(ctx: UiContext, topicId: string): Response {
       const messageEl = document.createElement('div');
       messageEl.className = 'message';
       messageEl.dataset.messageId = msg.id;
+      
+      // Add stable ID for hash navigation (validate first)
+      const ID_REGEX = /^[a-zA-Z0-9_-]+$/;
+      if (ID_REGEX.test(msg.id)) {
+        messageEl.id = 'msg_' + msg.id;
+      }
 
       const header = document.createElement('div');
       header.className = 'message-header';
@@ -540,6 +560,37 @@ function renderTopicMessagesPage(ctx: UiContext, topicId: string): Response {
       if (!exists) {
         state.attachments.push(att);
         renderAttachments();
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Hash Navigation
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function handleHashNavigation() {
+      const hash = window.location.hash;
+      if (!hash || !hash.startsWith('#msg_')) return;
+
+      const messageId = hash.substring(5); // Remove '#msg_'
+      const ID_REGEX = /^[a-zA-Z0-9_-]+$/;
+      
+      if (!ID_REGEX.test(messageId)) return;
+
+      const messageEl = document.getElementById('msg_' + messageId);
+      
+      if (messageEl) {
+        // Scroll to message
+        messageEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        
+        // Highlight message
+        messageEl.classList.add('highlighted');
+      } else {
+        // Message not in current view - show hint
+        const messagesList = document.getElementById('messages-list');
+        const hint = document.createElement('div');
+        hint.className = 'hash-hint';
+        hint.textContent = 'Message not currently loaded (showing last 50 messages only)';
+        messagesList.insertBefore(hint, messagesList.firstChild);
       }
     }
 
@@ -714,6 +765,9 @@ function renderTopicMessagesPage(ctx: UiContext, topicId: string): Response {
         loadMessages(),
         loadAttachments(),
       ]);
+
+      // Handle hash navigation after messages are loaded
+      handleHashNavigation();
 
       // Start WebSocket connection after initial load
       connectWebSocket();

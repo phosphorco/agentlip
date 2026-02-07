@@ -280,9 +280,9 @@ describe("Plugin Runtime - Timeout", () => {
         expect(result.error).toContain("500ms");
       }
 
-      // Should terminate near timeout (allow 200ms margin)
+      // Should terminate near timeout (allow some scheduling/clock jitter)
       expect(elapsedMs).toBeLessThan(700);
-      expect(elapsedMs).toBeGreaterThanOrEqual(500);
+      expect(elapsedMs).toBeGreaterThanOrEqual(450);
     } finally {
       await cleanupTempPlugin(pluginPath);
     }

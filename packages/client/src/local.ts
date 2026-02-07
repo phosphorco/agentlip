@@ -8,7 +8,6 @@
  * ```typescript
  * const client = await connectToLocalAgentlip({
  *   cwd: process.cwd(),
- *   startIfMissing: false
  * });
  * 
  * await client.sendMessage({ topicId: "...", sender: "bot", contentRaw: "Hello" });
@@ -22,6 +21,8 @@
  */
 
 import { PROTOCOL_VERSION } from "@agentlip/protocol";
+import { spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { discoverOrInitWorkspace } from "./discovery";
 import { readServerJson, validateHub } from "./serverJson";
 import { wsConnect, type WsConnection } from "./ws";
@@ -124,8 +125,16 @@ export class MutationError extends Error {
 export interface ConnectToLocalAgentlipOptions {
   /** Starting directory for workspace discovery (defaults to process.cwd()) */
   cwd?: string;
-  /** Whether to spawn hub if not running (NOT IMPLEMENTED - must be false) */
-  startIfMissing?: false;
+  /** Whether to spawn hub if not running (defaults to true) */
+  startIfMissing?: boolean;
+  /** Path to Bun executable (defaults to "bun") */
+  bunPath?: string;
+  /** Idle shutdown timeout in ms (only if this call spawned the hub, defaults to 180000) */
+  idleShutdownMs?: number;
+  /** Timeout for hub startup in ms (defaults to 10000) */
+  startTimeoutMs?: number;
+  /** AbortSignal for cancelling startup */
+  signal?: AbortSignal;
   /** AfterEventId for WS replay (defaults to 0 = from beginning) */
   afterEventId?: number;
   /** Channel/topic subscription filters */
@@ -133,6 +142,8 @@ export interface ConnectToLocalAgentlipOptions {
     channels?: string[];
     topics?: string[];
   };
+  /** WebSocket constructor override (Node compat / custom implementations) */
+  webSocketImpl?: typeof WebSocket;
 }
 
 export interface LocalAgentlipClient {
@@ -142,7 +153,7 @@ export interface LocalAgentlipClient {
   readonly baseUrl: string;
   /** Auth token */
   readonly authToken: string;
-  /** Whether hub was started by this client (always false for bd-27i.4) */
+  /** Whether hub was started by this client */
   readonly startedHub: boolean;
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -281,40 +292,324 @@ class EventBroadcaster {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// bunPath Validation (prevent shell injection)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Validate bunPath to prevent shell injection.
+ * 
+ * Allow:
+ * - Bare command names (e.g., "bun")
+ * - Absolute paths (e.g., "/usr/local/bin/bun")
+ * 
+ * Reject:
+ * - Paths containing ".." (path traversal)
+ * - Shell metacharacters (; & | $ ` \n)
+ */
+function validateBunPath(bunPath: string): void {
+  // Check for path traversal
+  if (bunPath.includes("..")) {
+    throw new Error(`Invalid bunPath: contains path traversal (..): ${bunPath}`);
+  }
+
+  // Check for shell metacharacters
+  const dangerousChars = /[;&|$`\n]/;
+  if (dangerousChars.test(bunPath)) {
+    throw new Error(`Invalid bunPath: contains shell metacharacters: ${bunPath}`);
+  }
+
+  // Must be either bare command name or absolute path
+  const isAbsolute = bunPath.startsWith("/");
+  const isBareCommand = !bunPath.includes("/");
+
+  if (!isAbsolute && !isBareCommand) {
+    throw new Error(`Invalid bunPath: must be absolute path or bare command name: ${bunPath}`);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hub Spawning (spawn-if-missing)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface SpawnHubOptions {
+  workspaceRoot: string;
+  bunPath: string;
+  idleShutdownMs: number;
+  startTimeoutMs: number;
+  signal?: AbortSignal;
+}
+
+interface SpawnHubResult {
+  success: true;
+  /** True if this call spawned the hub, false if another process won the race */
+  spawned: boolean;
+}
+
+/**
+ * Spawn hub daemon via `bun x -p @agentlip/hub agentlipd up`.
+ * 
+ * Implements race-safe startup loop:
+ * - Try discovery/validation first
+ * - Spawn child if hub not running
+ * - If child exits with code 10 (lock conflict), backoff and retry discovery
+ * - If child exits non-zero otherwise, surface stderr
+ * - Timeout and abort handling with child cleanup
+ * 
+ * Returns when hub is healthy (discovered + validated).
+ * Sets startedHub=true ONLY if this call successfully spawned the hub.
+ */
+async function spawnHubIfMissing(
+  opts: SpawnHubOptions
+): Promise<SpawnHubResult> {
+  const { workspaceRoot, bunPath, idleShutdownMs, startTimeoutMs, signal } = opts;
+
+  const deadlineMs = Date.now() + startTimeoutMs;
+
+  // Test override: spawn the repo-local agentlipd script (or any bun script)
+  // instead of `bun x -p @agentlip/hub ...` to avoid network access.
+  const testAgentlipdPath = process.env.AGENTLIP_LOCAL_CLIENT_TEST_AGENTLIPD_PATH;
+
+  const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+  const throwIfAborted = () => {
+    if (signal?.aborted) {
+      throw new DOMException("Aborted", "AbortError");
+    }
+  };
+
+  const throwIfTimedOut = () => {
+    if (Date.now() > deadlineMs) {
+      throw new HubStartTimeoutError(
+        `Hub failed to start within ${startTimeoutMs}ms`
+      );
+    }
+  };
+
+  const killChild = async (child: ChildProcess): Promise<void> => {
+    if (child.pid == null) return;
+    if (child.exitCode !== null || child.signalCode !== null) return;
+
+    try {
+      child.kill("SIGTERM");
+    } catch {
+      // ignore
+    }
+
+    const exited = await Promise.race([
+      new Promise<boolean>((resolve) => {
+        child.once("exit", () => resolve(true));
+        child.once("error", () => resolve(true));
+      }),
+      sleep(2000).then(() => false),
+    ]);
+
+    if (exited) return;
+
+    try {
+      child.kill("SIGKILL");
+    } catch {
+      // ignore
+    }
+
+    await Promise.race([
+      new Promise<void>((resolve) => {
+        child.once("exit", () => resolve());
+        child.once("error", () => resolve());
+      }),
+      sleep(2000),
+    ]);
+  };
+
+  while (true) {
+    throwIfAborted();
+    throwIfTimedOut();
+
+    // Try discovery + validation first (in case hub already running)
+    const serverJson = await readServerJson(workspaceRoot);
+    if (serverJson) {
+      const validation = await validateHub(serverJson);
+
+      if (validation.health && validation.health.protocol_version !== PROTOCOL_VERSION) {
+        throw new ProtocolVersionMismatchError(
+          PROTOCOL_VERSION,
+          validation.health.protocol_version
+        );
+      }
+
+      if (validation.valid && validation.health) {
+        // Hub is healthy - we discovered it, didn't spawn it
+        return { success: true, spawned: false };
+      }
+    }
+
+    // Hub not running or unhealthy - spawn child
+    const args = testAgentlipdPath
+      ? [
+          testAgentlipdPath,
+          "up",
+          "--workspace",
+          workspaceRoot,
+          "--idle-shutdown-ms",
+          String(idleShutdownMs),
+        ]
+      : [
+          "x",
+          "--bun",
+          "-p",
+          "@agentlip/hub",
+          "agentlipd",
+          "up",
+          "--workspace",
+          workspaceRoot,
+          "--idle-shutdown-ms",
+          String(idleShutdownMs),
+        ];
+
+    const child = spawn(bunPath, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: process.env,
+    });
+
+    let keepChildRunning = false;
+
+    let childError: Error | null = null;
+    let childExitCode: number | null = null;
+
+    child.once("error", (err) => {
+      childError = err;
+    });
+
+    child.once("exit", (code) => {
+      childExitCode = code;
+    });
+
+    // Drain stdout to avoid backpressure
+    child.stdout?.resume();
+
+    // Capture stderr for diagnostics
+    let stderr = "";
+    const MAX_STDERR = 64 * 1024;
+    child.stderr?.setEncoding("utf8");
+    child.stderr?.on("data", (chunk) => {
+      if (stderr.length >= MAX_STDERR) return;
+      stderr += String(chunk);
+      if (stderr.length > MAX_STDERR) stderr = stderr.slice(0, MAX_STDERR);
+    });
+
+    try {
+      while (true) {
+        throwIfAborted();
+        throwIfTimedOut();
+
+        if (childError) {
+          const anyErr = childError as any;
+          if (anyErr?.code === "ENOENT") {
+            throw new BunNotFoundError(`Bun not found: ${bunPath}`);
+          }
+          throw childError;
+        }
+
+        // Check if hub is now healthy
+        const currentServerJson = await readServerJson(workspaceRoot);
+        if (currentServerJson) {
+          const validation = await validateHub(currentServerJson);
+
+          if (validation.health && validation.health.protocol_version !== PROTOCOL_VERSION) {
+            throw new ProtocolVersionMismatchError(
+              PROTOCOL_VERSION,
+              validation.health.protocol_version
+            );
+          }
+
+          if (validation.health && !validation.valid) {
+            throw new Error(`Hub validation failed: ${validation.reason}`);
+          }
+
+          if (validation.valid && validation.health) {
+            // Hub is healthy. Determine whether *our* child is the daemon that wrote server.json.
+            const spawned = child.pid != null && currentServerJson.pid === child.pid;
+            keepChildRunning = spawned;
+            return { success: true, spawned };
+          }
+        }
+
+        if (childExitCode !== null) {
+          // Child exited before hub became healthy
+          if (childExitCode === 10) {
+            // Lock conflict - another process won the race
+            // Backoff (50-100ms jitter) and retry discovery
+            const backoffMs = 50 + Math.random() * 50;
+            await sleep(backoffMs);
+            break; // restart outer loop
+          }
+
+          if (childExitCode !== 0) {
+            throw new Error(
+              `Hub startup failed with exit code ${childExitCode}:\n${stderr.trim()}`.trim()
+            );
+          }
+
+          throw new Error(
+            "Hub startup process exited before hub became healthy (exit code 0)."
+          );
+        }
+
+        await sleep(50);
+      }
+    } finally {
+      // If we didn't start the daemon successfully, make sure no orphan remains.
+      if (!keepChildRunning) {
+        await killChild(child).catch(() => {
+          // Best-effort cleanup
+        });
+      }
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main Export: connectToLocalAgentlip
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Connect to an already-running local Agentlip hub.
+ * Connect to local Agentlip hub, optionally spawning it if missing.
  * 
  * Steps:
  * 1. Discover workspace via upward walk from cwd
- * 2. Read .agentlip/server.json
- * 3. Validate hub via /health and check protocol version
+ * 2. Try to read .agentlip/server.json and validate hub
+ * 3. If missing/unhealthy and startIfMissing=true, spawn hub daemon
  * 4. Connect WebSocket
  * 5. Return LocalAgentlipClient with bound mutations + event methods
  * 
  * @param options - Connection options
  * @returns LocalAgentlipClient instance
  * @throws WorkspaceNotFoundError if no workspace discovered/initialized
- * @throws Error if server.json missing or invalid
+ * @throws HubStartTimeoutError if hub fails to start within timeout
  * @throws ProtocolVersionMismatchError if protocol version doesn't match
  * @throws Error if hub validation fails
+ * @throws DOMException (AbortError) if signal aborted
  */
 export async function connectToLocalAgentlip(
   options: ConnectToLocalAgentlipOptions = {}
 ): Promise<LocalAgentlipClient> {
   const {
     cwd = process.cwd(),
-    startIfMissing = false,
+    startIfMissing = true,
+    bunPath = "bun",
+    idleShutdownMs = 180000,
+    startTimeoutMs = 10000,
+    signal,
     afterEventId = 0,
     subscriptions,
+    webSocketImpl,
   } = options;
 
-  if (startIfMissing !== false) {
-    throw new Error(
-      "startIfMissing: true is not yet implemented (bd-27i.5). Use startIfMissing: false."
-    );
+  // Validate bunPath for safety
+  validateBunPath(bunPath);
+
+  // Check abort signal upfront
+  if (signal?.aborted) {
+    throw new DOMException("Aborted", "AbortError");
   }
 
   // 1. Discover workspace
@@ -323,27 +618,79 @@ export async function connectToLocalAgentlip(
     throw new WorkspaceNotFoundError();
   }
 
-  // 2. Read server.json
-  const serverJson = await readServerJson(workspace.root);
-  if (!serverJson) {
+  let startedHub = false;
+
+  // 2. Try discovery + validation first
+  let serverJson = await readServerJson(workspace.root);
+
+  if (serverJson) {
+    const validation = await validateHub(serverJson);
+
+    // If hub is responsive but running a different protocol version, fail fast.
+    if (
+      validation.health &&
+      validation.health.protocol_version !== PROTOCOL_VERSION
+    ) {
+      throw new ProtocolVersionMismatchError(
+        PROTOCOL_VERSION,
+        validation.health.protocol_version
+      );
+    }
+
+    if (validation.health && !validation.valid) {
+      throw new Error(`Hub validation failed: ${validation.reason}`);
+    }
+
+    if (!(validation.valid && validation.health)) {
+      // Hub is unreachable/unhealthy - treat server.json as stale.
+      serverJson = null;
+    }
+  }
+
+  // 3. If hub not running/healthy and startIfMissing=true, spawn it
+  if (!serverJson && startIfMissing) {
+    const spawnResult = await spawnHubIfMissing({
+      workspaceRoot: workspace.root,
+      bunPath,
+      idleShutdownMs,
+      startTimeoutMs,
+      signal,
+    });
+
+    // Hub should now be healthy - re-read server.json
+    serverJson = await readServerJson(workspace.root);
+    if (!serverJson) {
+      throw new Error(
+        `Hub spawn succeeded but server.json not found in workspace ${workspace.root}`
+      );
+    }
+
+    const validation = await validateHub(serverJson);
+
+    if (
+      validation.health &&
+      validation.health.protocol_version !== PROTOCOL_VERSION
+    ) {
+      throw new ProtocolVersionMismatchError(
+        PROTOCOL_VERSION,
+        validation.health.protocol_version
+      );
+    }
+
+    if (!validation.valid || !validation.health) {
+      throw new Error(`Hub spawn succeeded but validation failed: ${validation.reason}`);
+    }
+
+    // Use the spawned flag from the result
+    startedHub = spawnResult.spawned;
+  } else if (!serverJson) {
+    // Hub not running and startIfMissing=false
     throw new Error(
-      `Hub not running: .agentlip/server.json not found in workspace ${workspace.root}`
+      `Hub not running: .agentlip/server.json not found in workspace ${workspace.root}. Set startIfMissing=true to auto-spawn.`
     );
   }
 
-  // 3. Validate hub via /health
-  const validation = await validateHub(serverJson);
-  if (!validation.valid || !validation.health) {
-    throw new Error(`Hub validation failed: ${validation.reason}`);
-  }
-
-  // Check protocol version
-  if (validation.health.protocol_version !== PROTOCOL_VERSION) {
-    throw new ProtocolVersionMismatchError(
-      PROTOCOL_VERSION,
-      validation.health.protocol_version
-    );
-  }
+  // serverJson is now guaranteed to be non-null and validated
 
   // 4. Connect WebSocket
   const baseUrl = `http://${serverJson.host}:${serverJson.port}`;
@@ -354,6 +701,7 @@ export async function connectToLocalAgentlip(
     authToken: serverJson.auth_token,
     afterEventId,
     subscriptions,
+    webSocketImpl,
   });
 
   // 5. Create event broadcaster (fanout to multiple subscribers)
@@ -387,7 +735,7 @@ export async function connectToLocalAgentlip(
     workspaceRoot: workspace.root,
     baseUrl,
     authToken: serverJson.auth_token,
-    startedHub: false,
+    startedHub,
 
     // Bound mutations
     sendMessage: (params) => wrapMutationError(() => sendMessage(httpClient, params)),
@@ -444,7 +792,7 @@ export async function connectToLocalAgentlip(
       const sub = broadcaster.createSubscriber();
 
       return new Promise<EventEnvelope>((resolve, reject) => {
-        let timeoutHandle: Timer | null = null;
+        let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
         let abortHandler: (() => void) | null = null;
 
         const cleanup = () => {

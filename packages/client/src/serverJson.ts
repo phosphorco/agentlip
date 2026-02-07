@@ -101,6 +101,7 @@ export async function validateHub(
     if (health.protocol_version !== PROTOCOL_VERSION) {
       return {
         valid: false,
+        health,
         reason: `Protocol version mismatch: expected ${PROTOCOL_VERSION}, got ${health.protocol_version}`,
       };
     }
@@ -109,6 +110,7 @@ export async function validateHub(
     if (health.schema_version < 1) {
       return {
         valid: false,
+        health,
         reason: `Invalid schema version: ${health.schema_version} (expected >= 1)`,
       };
     }

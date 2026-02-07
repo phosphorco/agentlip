@@ -4,8 +4,12 @@ All notable changes to Agentlip will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.1-rc.1] - 2026-02-07
+
 ### Added
-- Initial changelog setup for Craft release workflow
+- Node v22+ ESM local client (`agentlip/local-client`) and Node-friendly SDK exports (conditional exports + built `dist/`)
+- Hub daemon idle auto-shutdown (opt-in, daemon-mode only)
+- npm Trusted Publishing (OIDC) + provenance support in publish workflow
 
 ## [0.1.0] - 2025-02-06
 

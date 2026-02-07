@@ -22,7 +22,7 @@
  * ```
  */
 
-import type { HelloMessage, HelloOkMessage, EventEnvelope } from "./types";
+import type { HelloMessage, HelloOkMessage, EventEnvelope } from "./types.js";
 
 export interface WsConnectOptions {
   /** ws://host:port/ws URL (without token) */
@@ -119,7 +119,7 @@ export async function wsConnect(options: WsConnectOptions): Promise<WsConnection
     ws = new WebSocketCtor(wsUrl);
 
     let handshakeComplete = false;
-    let openTimeout: Timer | null = null;
+    let openTimeout: ReturnType<typeof setTimeout> | null = null;
 
     const cleanup = () => {
       if (openTimeout) {

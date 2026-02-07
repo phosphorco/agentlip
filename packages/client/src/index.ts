@@ -8,9 +8,9 @@
  * - WebSocket protocol types
  */
 
-export * from "./types";
-export * from "./discovery";
-export * from "./serverJson";
-export * from "./ws";
-export * from "./events";
-export * from "./mutations";
+export * from "./types.js";
+export * from "./discovery.js";
+export * from "./serverJson.js";
+export * from "./ws.js";
+export * from "./events.js";
+export * from "./mutations.js";

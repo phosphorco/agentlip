@@ -23,10 +23,10 @@
 import { PROTOCOL_VERSION } from "@agentlip/protocol";
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
-import { discoverOrInitWorkspace } from "./discovery";
-import { readServerJson, validateHub } from "./serverJson";
-import { wsConnect, type WsConnection } from "./ws";
-import type { EventEnvelope } from "./types";
+import { discoverOrInitWorkspace } from "./discovery.js";
+import { readServerJson, validateHub } from "./serverJson.js";
+import { wsConnect, type WsConnection } from "./ws.js";
+import type { EventEnvelope } from "./types.js";
 import {
   HubApiError,
   sendMessage,
@@ -53,7 +53,7 @@ import {
   type CreateTopicResult,
   type RenameTopicParams,
   type RenameTopicResult,
-} from "./mutations";
+} from "./mutations.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Error Classes

@@ -8,7 +8,7 @@
  * breaking existing consumers. Unknown events pass through as EventEnvelope.
  */
 
-import type { EventEnvelope } from "./types";
+import type { EventEnvelope } from "./types.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Known Event Names (additive-only)

@@ -4,6 +4,7 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "customConditions": ["bun"],
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,

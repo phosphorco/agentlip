@@ -17,12 +17,24 @@
     "access": "public"
   },
   "files": [
+    "dist/**/*",
     "src/**/*.ts",
     "!src/**/*.test.ts"
   ],
   "exports": {
-    ".": "./src/index.ts",
-    "./local": "./src/local.ts"
+    ".": {
+      "bun": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./local": {
+      "bun": "./src/local.ts",
+      "types": "./dist/local.d.ts",
+      "import": "./dist/local.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
     "@agentlip/workspace": "^0.1.0",

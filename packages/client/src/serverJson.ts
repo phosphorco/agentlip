@@ -8,7 +8,7 @@ import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import { discoverWorkspaceRoot } from "@agentlip/workspace";
 import { PROTOCOL_VERSION, type HealthResponse } from "@agentlip/protocol";
-import type { ServerJsonData } from "./types";
+import type { ServerJsonData } from "./types.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types

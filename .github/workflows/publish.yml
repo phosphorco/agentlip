@@ -39,6 +39,13 @@ jobs:
         env:
           AGENTLIP_ENABLE_FTS: '0'
       
+      - name: Build dist for Node-facing packages
+        run: |
+          bun run --filter @agentlip/protocol build
+          bun run --filter @agentlip/workspace build
+          bun run --filter @agentlip/client build
+          bun run --filter agentlip build
+      
       - name: Verify version consistency
         run: |
           VERSION="${GITHUB_REF_NAME#v}"

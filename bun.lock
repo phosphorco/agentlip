@@ -19,19 +19,20 @@
         "agentlip": "./src/agentlip.ts",
       },
       "dependencies": {
-        "@agentlip/kernel": "workspace:*",
-        "@agentlip/workspace": "workspace:*",
+        "@agentlip/client": "^0.1.0",
+        "@agentlip/kernel": "^0.1.0",
+        "@agentlip/workspace": "^0.1.0",
       },
       "devDependencies": {
-        "@agentlip/hub": "workspace:*",
+        "@agentlip/hub": "^0.1.0",
       },
     },
     "packages/client": {
       "name": "@agentlip/client",
       "version": "0.1.0",
       "dependencies": {
-        "@agentlip/protocol": "workspace:*",
-        "@agentlip/workspace": "workspace:*",
+        "@agentlip/protocol": "^0.1.0",
+        "@agentlip/workspace": "^0.1.0",
       },
     },
     "packages/hub": {
@@ -41,9 +42,9 @@
         "agentlipd": "./src/agentlipd.ts",
       },
       "dependencies": {
-        "@agentlip/kernel": "workspace:*",
-        "@agentlip/protocol": "workspace:*",
-        "@agentlip/workspace": "workspace:*",
+        "@agentlip/kernel": "^0.1.0",
+        "@agentlip/protocol": "^0.1.0",
+        "@agentlip/workspace": "^0.1.0",
       },
     },
     "packages/kernel": {

@@ -14,16 +14,23 @@
     "bun": ">=1.0.0"
   },
   "files": [
+    "dist/**/*",
     "src/**/*.ts",
     "!src/**/*.test.ts"
   ],
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./local-client": {
+      "bun": "./src/local-client.ts",
+      "types": "./dist/local-client.d.ts",
+      "import": "./dist/local-client.js"
+    }
   },
   "bin": {
     "agentlip": "./src/agentlip.ts"
   },
   "dependencies": {
+    "@agentlip/client": "^0.1.0",
     "@agentlip/workspace": "^0.1.0",
     "@agentlip/kernel": "^0.1.0"
   },
@@ -31,6 +38,7 @@
     "@agentlip/hub": "^0.1.0"
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "test": "bun test",
     "verify": "bun verify.ts"
   }

@@ -1,9 +1,41 @@
+# ------------------------------------------------------------------------------
+# Agentlip npm Publish Workflow
+# ------------------------------------------------------------------------------
+#
+# Authentication:
+#   Default: Trusted Publishing via OIDC (no secrets stored).
+#            Requires npm 11.5.1+ (Node 24 runner), id-token: write permission,
+#            and npm package configured with GitHub Actions publishing policy.
+#
+#   Fallback: Set repository variable USE_NPM_TOKEN='1' to use classic
+#             NPM_TOKEN secret instead of OIDC. Use this temporarily if OIDC
+#             is misconfigured or npm registry has issues with provenance.
+#
+# Partial publish recovery:
+#   If the workflow fails mid-publish (some packages published, others not):
+#   - Identify which packages made it to npm for VERSION (e.g. `npm view <pkg>@VERSION version`).
+#   - Re-running from the same tag will stop at the first already-published package
+#     ("cannot publish over existing version"). In that case:
+#       * Prefer: bump to a new patch/prerelease and re-publish, OR
+#       * Emergency: manually publish the remaining packages locally.
+#
+# Prerelease dist-tag:
+#   For prerelease versions (e.g. 0.1.1-rc.1), npm@11 requires explicit dist-tag.
+#   We extract the prerelease identifier (e.g. "rc") and use it as dist-tag.
+#   This avoids accidentally tagging prereleases as "latest".
+# ------------------------------------------------------------------------------
+
 name: Publish
 
 on:
   push:
     tags:
       - 'v*'
+
+# Prevent concurrent publishes to same ref; allow queued runs to complete
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   publish:
@@ -79,10 +111,12 @@ jobs:
       
       - name: Publish @agentlip/protocol (OIDC)
         if: vars.USE_NPM_TOKEN != '1'
+        timeout-minutes: 5
         run: cd packages/protocol && npm publish --access public --tag $NPM_DIST_TAG --provenance
       
       - name: Publish @agentlip/protocol (token fallback)
         if: vars.USE_NPM_TOKEN == '1'
+        timeout-minutes: 5
         run: cd packages/protocol && npm publish --access public --tag $NPM_DIST_TAG
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -92,10 +126,12 @@ jobs:
       
       - name: Publish @agentlip/kernel (OIDC)
         if: vars.USE_NPM_TOKEN != '1'
+        timeout-minutes: 5
         run: cd packages/kernel && npm publish --access public --tag $NPM_DIST_TAG --provenance
       
       - name: Publish @agentlip/kernel (token fallback)
         if: vars.USE_NPM_TOKEN == '1'
+        timeout-minutes: 5
         run: cd packages/kernel && npm publish --access public --tag $NPM_DIST_TAG
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -105,10 +141,12 @@ jobs:
       
       - name: Publish @agentlip/workspace (OIDC)
         if: vars.USE_NPM_TOKEN != '1'
+        timeout-minutes: 5
         run: cd packages/workspace && npm publish --access public --tag $NPM_DIST_TAG --provenance
       
       - name: Publish @agentlip/workspace (token fallback)
         if: vars.USE_NPM_TOKEN == '1'
+        timeout-minutes: 5
         run: cd packages/workspace && npm publish --access public --tag $NPM_DIST_TAG
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -118,10 +156,12 @@ jobs:
       
       - name: Publish @agentlip/client (OIDC)
         if: vars.USE_NPM_TOKEN != '1'
+        timeout-minutes: 5
         run: cd packages/client && npm publish --access public --tag $NPM_DIST_TAG --provenance
       
       - name: Publish @agentlip/client (token fallback)
         if: vars.USE_NPM_TOKEN == '1'
+        timeout-minutes: 5
         run: cd packages/client && npm publish --access public --tag $NPM_DIST_TAG
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -131,10 +171,12 @@ jobs:
       
       - name: Publish agentlip (CLI) (OIDC)
         if: vars.USE_NPM_TOKEN != '1'
+        timeout-minutes: 5
         run: cd packages/cli && npm publish --tag $NPM_DIST_TAG --provenance
       
       - name: Publish agentlip (CLI) (token fallback)
         if: vars.USE_NPM_TOKEN == '1'
+        timeout-minutes: 5
         run: cd packages/cli && npm publish --tag $NPM_DIST_TAG
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -144,10 +186,12 @@ jobs:
       
       - name: Publish @agentlip/hub (OIDC)
         if: vars.USE_NPM_TOKEN != '1'
+        timeout-minutes: 5
         run: cd packages/hub && npm publish --access public --tag $NPM_DIST_TAG --provenance
       
       - name: Publish @agentlip/hub (token fallback)
         if: vars.USE_NPM_TOKEN == '1'
+        timeout-minutes: 5
         run: cd packages/hub && npm publish --access public --tag $NPM_DIST_TAG
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

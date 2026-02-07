@@ -448,11 +448,24 @@ No authentication required.
 
 **Query Parameters**:
 - `after` (optional, default 0): return events with `event_id > after`
-- `limit` (optional, default 100, max 1000): max results
+- `tail` (optional): return the most recent N events (mutually exclusive with `after`)
+  - Server clamps `tail` to 1..1000
+  - Returns events in ascending `event_id` order (oldest to newest of the tail)
+- `limit` (optional, default 100, max 1000): max results (only applies when using `after`)
+- `channel_id` (optional, repeatable): filter by channel scope (OR semantics)
+  - IDs must match `/^[a-zA-Z0-9_-]+$/`
+  - Malformed IDs return 400 `INVALID_INPUT`
+  - Non-existent IDs return empty results (200)
+- `topic_id` (optional, repeatable): filter by topic scope (OR semantics)
+  - Checks both `scope.topic_id` and `scope.topic_id2`
+  - IDs must match `/^[a-zA-Z0-9_-]+$/`
+  - Malformed IDs return 400 `INVALID_INPUT`
+  - Non-existent IDs return empty results (200)
 
 **Response** (200):
 ```json
 {
+  "replay_until": 5,
   "events": [
     {
       "event_id": 1,
@@ -465,11 +478,33 @@ No authentication required.
           "description": "General discussion",
           "created_at": "2025-02-05T21:40:00.000Z"
         }
+      },
+      "scope": {
+        "channel_id": "ch_...",
+        "topic_id": null,
+        "topic_id2": null
+      },
+      "entity": {
+        "type": "channel",
+        "id": "ch_..."
       }
     }
   ]
 }
 ```
+
+**Additive Fields (Gate A)**:
+- `replay_until`: Current maximum `event_id` (use for WS handshake)
+- `scope`: Event scope routing metadata
+  - `channel_id`: Channel scope (nullable)
+  - `topic_id`: Primary topic scope (nullable)
+  - `topic_id2`: Secondary topic scope (nullable, used for `message.moved_topic`)
+- `entity`: Event entity reference
+  - `type`: Entity type (e.g., `"channel"`, `"topic"`, `"message"`, `"attachment"`)
+  - `id`: Entity ID
+
+**Error Codes**:
+- `400 INVALID_INPUT`: `after` and `tail` both provided, or malformed ID parameters
 
 ## WebSocket Protocol
 

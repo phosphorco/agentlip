@@ -45,6 +45,7 @@ import {
   insertEvent,
   replayEvents,
   getLatestEventId,
+  tailEvents,
 } from "@agentlip/kernel";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1287,33 +1288,112 @@ async function handleCreateAttachment(
 
 /**
  * GET /api/v1/events
+ * 
+ * Gate A: Extended with replay_until, scope/entity fields, tail parameter, and filters.
  */
 function handleListEvents(req: Request, ctx: ApiV1Context): Response {
   const url = new URL(req.url);
-  const after = parseInt(url.searchParams.get("after") ?? "0", 10);
-  const limit = Math.min(
-    parseInt(url.searchParams.get("limit") ?? "100", 10),
-    1000
-  );
+
+  const afterRaw = url.searchParams.get("after");
+  const tailRaw = url.searchParams.get("tail");
+  const limitRaw = url.searchParams.get("limit");
+
+  // Get all channel_id and topic_id params (repeatable)
+  const channelIds = url.searchParams.getAll("channel_id");
+  const topicIds = url.searchParams.getAll("topic_id");
+
+  // Validate mutual exclusion: after and tail cannot both be present
+  if (afterRaw !== null && tailRaw !== null) {
+    return validationErrorResponse("after and tail are mutually exclusive");
+  }
+
+  // Validate ID format: /^[a-zA-Z0-9_-]+$/
+  const idRegex = /^[a-zA-Z0-9_-]+$/;
+
+  for (const channelId of channelIds) {
+    if (!idRegex.test(channelId)) {
+      return validationErrorResponse("channel_id must match /^[a-zA-Z0-9_-]+$/");
+    }
+  }
+
+  for (const topicId of topicIds) {
+    if (!idRegex.test(topicId)) {
+      return validationErrorResponse("topic_id must match /^[a-zA-Z0-9_-]+$/");
+    }
+  }
+
+  const parseIntParam = (raw: string): number | null => {
+    const trimmed = raw.trim();
+    if (!/^[+-]?\d+$/.test(trimmed)) return null;
+    const n = Number.parseInt(trimmed, 10);
+    if (!Number.isSafeInteger(n)) return null;
+    return n;
+  };
+
+  // Parse numeric params
+  let limit = 100;
+  let after = 0;
+  let tailN: number | null = null;
+
+  if (tailRaw !== null) {
+    const parsedTail = parseIntParam(tailRaw);
+    if (parsedTail === null) {
+      return validationErrorResponse("tail must be an integer");
+    }
+    tailN = Math.max(1, Math.min(parsedTail, 1000));
+  } else {
+    if (afterRaw !== null) {
+      const parsedAfter = parseIntParam(afterRaw);
+      if (parsedAfter === null || parsedAfter < 0) {
+        return validationErrorResponse("after must be a non-negative integer");
+      }
+      after = parsedAfter;
+    }
+
+    if (limitRaw !== null) {
+      const parsedLimit = parseIntParam(limitRaw);
+      if (parsedLimit === null || parsedLimit <= 0) {
+        return validationErrorResponse("limit must be a positive integer");
+      }
+      limit = Math.min(parsedLimit, 1000);
+    }
+  }
 
   try {
     const replayUntil = getLatestEventId(ctx.db);
-    const events = replayEvents({
-      db: ctx.db,
-      afterEventId: after,
-      replayUntil,
-      limit,
-    });
 
-    // Convert events to simplified format
+    const channelFilter = channelIds.length > 0 ? channelIds : undefined;
+    const topicFilter = topicIds.length > 0 ? topicIds : undefined;
+
+    let events: ReturnType<typeof replayEvents>;
+
+    if (tailN !== null) {
+      events = tailEvents(ctx.db, replayUntil, tailN, channelFilter, topicFilter);
+    } else {
+      events = replayEvents({
+        db: ctx.db,
+        afterEventId: after,
+        replayUntil,
+        limit,
+        channelIds: channelFilter,
+        topicIds: topicFilter,
+      });
+    }
+
+    // Format events with additive fields: scope, entity, and original data_json
     const formattedEvents = events.map((event) => ({
       event_id: event.event_id,
       ts: event.ts,
       name: event.name,
       data_json: event.data,
+      scope: event.scope,
+      entity: event.entity,
     }));
 
-    return jsonResponse({ events: formattedEvents });
+    return jsonResponse({
+      replay_until: replayUntil,
+      events: formattedEvents,
+    });
   } catch (error) {
     return handleDatabaseError(error, "Event listing");
   }

@@ -363,3 +363,73 @@ export function countEventsInRange(db: Database, afterEventId: number, replayUnt
   
   return row?.count ?? 0;
 }
+
+/**
+ * Get the most recent N events (tail mode), bounded by a replay snapshot.
+ * 
+ * Used by GET /api/v1/events?tail=<n> to fetch recent events without scanning from 0.
+ * 
+ * IMPORTANT: This query must be bounded by `replayUntil` so callers can use
+ * `replay_until` as a stable snapshot boundary for WS handshakes.
+ * 
+ * @param db - Database instance
+ * @param replayUntil - End boundary (inclusive). Should be a snapshot of MAX(event_id).
+ * @param n - Number of events to return (will be clamped to 1..1000 by caller)
+ * @param channelIds - Optional channel ID filter (OR semantics)
+ * @param topicIds - Optional topic ID filter (OR semantics)
+ * @returns Array of parsed events in ascending event_id order (oldest to newest)
+ */
+export function tailEvents(
+  db: Database,
+  replayUntil: number,
+  n: number,
+  channelIds?: string[],
+  topicIds?: string[]
+): ParsedEvent[] {
+  if (replayUntil < 0) {
+    throw new Error("replayUntil must be >= 0");
+  }
+  if (n <= 0) {
+    throw new Error("tail count must be > 0");
+  }
+
+  // Build query with DESC order to get latest N (<= replayUntil), then reverse.
+  let sql = `
+    SELECT event_id, ts, name, scope_channel_id, scope_topic_id, scope_topic_id2,
+           entity_type, entity_id, data_json
+    FROM events
+    WHERE event_id <= ?
+  `;
+
+  const params: (number | string)[] = [replayUntil];
+  const hasChannelFilter = channelIds && channelIds.length > 0;
+  const hasTopicFilter = topicIds && topicIds.length > 0;
+
+  if (hasChannelFilter || hasTopicFilter) {
+    const scopeConditions: string[] = [];
+
+    if (hasChannelFilter) {
+      const placeholders = channelIds.map(() => "?").join(", ");
+      scopeConditions.push(`scope_channel_id IN (${placeholders})`);
+      params.push(...channelIds);
+    }
+
+    if (hasTopicFilter) {
+      const placeholders = topicIds.map(() => "?").join(", ");
+      scopeConditions.push(
+        `(scope_topic_id IN (${placeholders}) OR scope_topic_id2 IN (${placeholders}))`
+      );
+      params.push(...topicIds, ...topicIds);
+    }
+
+    sql += ` AND (${scopeConditions.join(" OR ")})`;
+  }
+
+  sql += ` ORDER BY event_id DESC LIMIT ?`;
+  params.push(n);
+
+  const rows = db.query<EventRow, (number | string)[]>(sql).all(...params);
+
+  // Reverse to get ascending order
+  return rows.reverse().map(parseEventRow);
+}

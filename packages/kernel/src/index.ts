@@ -19,6 +19,7 @@ export {
   insertEvent,
   getLatestEventId,
   replayEvents,
+  tailEvents,
   getEventById,
   countEventsInRange,
   type EventScopes,

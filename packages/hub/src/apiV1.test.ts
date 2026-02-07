@@ -1324,18 +1324,19 @@ describe("API v1 - Events", () => {
     ctx = createTestContext(db);
   });
 
-  test("GET /api/v1/events returns empty list", async () => {
+  test("GET /api/v1/events returns empty list with replay_until", async () => {
     const req = createRequest("GET", "/api/v1/events?after=0");
     const response = await handleApiV1(req, ctx);
 
     expect(response.status).toBe(200);
     const data: any = await parseResponse(response);
     expect(data.events).toEqual([]);
+    expect(data.replay_until).toBe(0); // No events yet
   });
 
-  test("GET /api/v1/events returns events after creating entities", async () => {
+  test("GET /api/v1/events returns events with scope and entity (Gate A)", async () => {
     // Create channel (generates event)
-    await handleApiV1(
+    const channelRes = await handleApiV1(
       createRequest(
         "POST",
         "/api/v1/channels",
@@ -1344,6 +1345,8 @@ describe("API v1 - Events", () => {
       ),
       ctx
     );
+    const channelData: any = await parseResponse(channelRes);
+    const channelId = channelData.channel.id;
 
     // Query events
     const req = createRequest("GET", "/api/v1/events?after=0&limit=10");
@@ -1352,7 +1355,130 @@ describe("API v1 - Events", () => {
     expect(response.status).toBe(200);
     const data: any = await parseResponse(response);
     expect(data.events.length).toBeGreaterThan(0);
-    expect(data.events[0].name).toBe("channel.created");
+    expect(data.replay_until).toBeGreaterThan(0);
+    
+    // Verify additive fields
+    const event = data.events[0];
+    expect(event.name).toBe("channel.created");
+    expect(event.scope).toBeDefined();
+    expect(event.scope.channel_id).toBe(channelId);
+    expect(event.entity).toBeDefined();
+    expect(event.entity.type).toBe("channel");
+    expect(event.entity.id).toBe(channelId);
+  });
+
+  test("GET /api/v1/events?tail=2 returns exactly 2 events (Gate A)", async () => {
+    // Create 3 channels
+    for (let i = 0; i < 3; i++) {
+      await handleApiV1(
+        createRequest(
+          "POST",
+          "/api/v1/channels",
+          { name: `channel-${i}` },
+          { Authorization: "Bearer test-token-12345" }
+        ),
+        ctx
+      );
+    }
+
+    // Query with tail=2
+    const req = createRequest("GET", "/api/v1/events?tail=2");
+    const response = await handleApiV1(req, ctx);
+
+    expect(response.status).toBe(200);
+    const data: any = await parseResponse(response);
+    expect(data.events.length).toBe(2);
+    expect(data.replay_until).toBeGreaterThan(0);
+    
+    // Events should be in ascending order (oldest to newest of the tail)
+    expect(data.events[0].event_id).toBeLessThan(data.events[1].event_id);
+  });
+
+  test("GET /api/v1/events with after+tail returns 400 (Gate A)", async () => {
+    const req = createRequest("GET", "/api/v1/events?after=0&tail=10");
+    const response = await handleApiV1(req, ctx);
+
+    expect(response.status).toBe(400);
+    const data: any = await parseResponse(response);
+    expect(data.code).toBe("INVALID_INPUT");
+    expect(data.error).toContain("mutually exclusive");
+  });
+
+  test("GET /api/v1/events?channel_id filters events (Gate A)", async () => {
+    // Create two channels
+    const ch1Res = await handleApiV1(
+      createRequest(
+        "POST",
+        "/api/v1/channels",
+        { name: "channel-1" },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+    const ch1Data: any = await parseResponse(ch1Res);
+    const ch1Id = ch1Data.channel.id;
+
+    const ch2Res = await handleApiV1(
+      createRequest(
+        "POST",
+        "/api/v1/channels",
+        { name: "channel-2" },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+
+    // Query events for channel-1 only
+    const req = createRequest("GET", `/api/v1/events?channel_id=${ch1Id}`);
+    const response = await handleApiV1(req, ctx);
+
+    expect(response.status).toBe(200);
+    const data: any = await parseResponse(response);
+    
+    // Should only return events for channel-1
+    expect(data.events.length).toBe(1);
+    expect(data.events[0].scope.channel_id).toBe(ch1Id);
+  });
+
+  test("GET /api/v1/events with malformed channel_id returns 400 (Gate A)", async () => {
+    const req = createRequest("GET", "/api/v1/events?channel_id=invalid id!");
+    const response = await handleApiV1(req, ctx);
+
+    expect(response.status).toBe(400);
+    const data: any = await parseResponse(response);
+    expect(data.code).toBe("INVALID_INPUT");
+    expect(data.error).toContain("channel_id must match");
+  });
+
+  test("GET /api/v1/events with malformed topic_id returns 400 (Gate A)", async () => {
+    const req = createRequest("GET", "/api/v1/events?topic_id=../../../etc/passwd");
+    const response = await handleApiV1(req, ctx);
+
+    expect(response.status).toBe(400);
+    const data: any = await parseResponse(response);
+    expect(data.code).toBe("INVALID_INPUT");
+    expect(data.error).toContain("topic_id must match");
+  });
+
+  test("GET /api/v1/events with unknown channel_id returns empty (Gate A)", async () => {
+    // Create a channel to get some events
+    await handleApiV1(
+      createRequest(
+        "POST",
+        "/api/v1/channels",
+        { name: "real-channel" },
+        { Authorization: "Bearer test-token-12345" }
+      ),
+      ctx
+    );
+
+    // Query with non-existent channel_id (valid format)
+    const req = createRequest("GET", "/api/v1/events?channel_id=ch_nonexistent");
+    const response = await handleApiV1(req, ctx);
+
+    expect(response.status).toBe(200);
+    const data: any = await parseResponse(response);
+    expect(data.events).toEqual([]);
   });
 });
 

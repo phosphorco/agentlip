@@ -217,3 +217,20 @@ Release/publish surface area added/changed by the epic:
 ### Verification
 - `br ready` does not reveal any newly-discovered high-priority tech-debt items that should have been captured.
 - If the plan is completed, move it to `.context/completed-plans/`.
+
+---
+
+## Known remaining debt
+
+**Status:** All gates (A–E) complete. The following minor items were explicitly deferred or marked optional during execution:
+
+1. **`scripts/shellcheck.sh`** (optional, Gate A) — Not implemented. A simple wrapper script that runs `shellcheck` on all `scripts/*.sh` if the binary exists. Low priority; scripts already pass `bash -n` and follow interface contracts.
+
+2. **`scripts/local-registry-e2e.sh`** (optional, Gate B) — Not implemented. A convenience script to run the full local registry flow (`up` → `publish-local` → `smoke` → `down`). Low priority; manual execution of individual scripts works fine.
+
+3. **`first-publish-v0.1.0.md` historical context** — This runbook documents the original first publish flow using NPM_TOKEN (before OIDC migration). Since the title indicates v0.1.0 and the workflow is now OIDC-only, the runbook is inherently historical. No update needed; it serves as a record of what was done.
+
+**No follow-up beads created** — The above items are minor conveniences, not high-risk tech debt. They don't warrant dedicated beads but are documented here for future reference.
+
+**Related work (tracked separately):**
+- `bd-2bg.5` (OIDC epic) — Manual deletion of `NPM_TOKEN` secret + `USE_NPM_TOKEN` variable from GitHub repo settings. In progress; awaiting human action.

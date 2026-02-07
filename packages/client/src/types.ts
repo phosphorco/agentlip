@@ -34,6 +34,10 @@ export interface EventEnvelope {
     topic_id?: string | null;
     topic_id2?: string | null;
   };
+  entity?: {
+    type: string;
+    id: string;
+  };
   data: Record<string, unknown>;
 }
 

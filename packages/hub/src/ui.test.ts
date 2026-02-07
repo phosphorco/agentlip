@@ -311,4 +311,119 @@ describe("UI endpoints", () => {
     expect(html).toContain("BlinkMacSystemFont");
     expect(html).toContain("Segoe UI");
   });
+
+  test("GET /ui/events returns HTML events timeline page", async () => {
+    const res = await fetch(`${baseUrl}/ui/events`);
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/html");
+
+    const html = await res.text();
+    
+    // Verify it's HTML
+    expect(html).toContain("<!DOCTYPE html>");
+    expect(html).toContain("<html");
+    expect(html).toContain("</html>");
+    expect(html).toContain("Event Timeline");
+
+    // Verify init function
+    expect(html).toContain("loadEvents");
+    
+    // Verify WS connection
+    expect(html).toContain("connectWebSocket");
+    expect(html).toContain("new WebSocket");
+    
+    // Verify auth token is embedded
+    expect(html).toContain(authToken);
+  });
+
+  test("Events page includes filtering controls", async () => {
+    const res = await fetch(`${baseUrl}/ui/events`);
+    const html = await res.text();
+
+    // Verify filter inputs
+    expect(html).toContain('id="filter-name"');
+    expect(html).toContain('id="filter-channel"');
+    expect(html).toContain('id="filter-topic"');
+    
+    // Verify pause button
+    expect(html).toContain('id="pause-btn"');
+  });
+
+  test("Events page uses XSS-safe rendering", async () => {
+    const res = await fetch(`${baseUrl}/ui/events`);
+    const html = await res.text();
+
+    // Verify textContent usage (not innerHTML for user data)
+    expect(html).toContain("textContent");
+    
+    // Verify JSON rendering is safe
+    expect(html).toContain("JSON.stringify");
+    
+    // No eval
+    expect(html).not.toContain("eval(");
+  });
+
+  test("Events page includes reconnection logic", async () => {
+    const res = await fetch(`${baseUrl}/ui/events`);
+    const html = await res.text();
+
+    // Verify reconnection handling
+    expect(html).toContain("attemptReconnect");
+    expect(html).toContain("reconnectAttempts");
+    expect(html).toContain("retry-btn");
+  });
+
+  test("Events page includes pause/resume with buffering", async () => {
+    const res = await fetch(`${baseUrl}/ui/events`);
+    const html = await res.text();
+
+    // Verify pause/resume logic
+    expect(html).toContain("togglePause");
+    expect(html).toContain("pausedBuffer");
+    expect(html).toContain("flushPausedBuffer");
+    
+    // Verify buffer limits
+    expect(html).toContain("MAX_BUFFER");
+  });
+
+  test("Events page includes navigation link in other pages", async () => {
+    // Check channels page
+    const channelsRes = await fetch(`${baseUrl}/ui`);
+    const channelsHtml = await channelsRes.text();
+    expect(channelsHtml).toContain('/ui/events');
+    expect(channelsHtml).toContain('Events');
+
+    // Check topics page
+    const topicsRes = await fetch(`${baseUrl}/ui/channels/${channelId}`);
+    const topicsHtml = await topicsRes.text();
+    expect(topicsHtml).toContain('/ui/events');
+
+    // Check messages page
+    const messagesRes = await fetch(`${baseUrl}/ui/topics/${topicId}`);
+    const messagesHtml = await messagesRes.text();
+    expect(messagesHtml).toContain('/ui/events');
+  });
+
+  test("Events page validates IDs before creating links", async () => {
+    const res = await fetch(`${baseUrl}/ui/events`);
+    const html = await res.text();
+
+    // Verify ID validation
+    expect(html).toContain("isValidId");
+    expect(html).toContain("ID_REGEX");
+  });
+
+  test("Events page includes entity linking logic", async () => {
+    const res = await fetch(`${baseUrl}/ui/events`);
+    const html = await res.text();
+
+    // Verify entity rendering with links
+    expect(html).toContain("renderEntity");
+    expect(html).toContain("entity-link");
+    
+    // Verify topic and message link generation
+    expect(html).toContain("entity.type === 'topic'");
+    expect(html).toContain("entity.type === 'message'");
+  });
 });

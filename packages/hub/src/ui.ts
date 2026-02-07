@@ -47,6 +47,11 @@ export function handleUiRequest(req: Request, ctx: UiContext): Response | null {
     return renderTopicMessagesPage(ctx, topicId);
   }
 
+  // GET /ui/events → Events timeline page
+  if (path === "/ui/events") {
+    return renderEventsPage(ctx);
+  }
+
   // Route not found
   return null;
 }
@@ -67,6 +72,9 @@ function renderChannelsListPage(ctx: UiContext): Response {
 <body>
   <div class="container">
     <header>
+      <nav>
+        <a href="/ui/events">📊 Events</a>
+      </nav>
       <h1>Channels</h1>
     </header>
     <main>
@@ -159,6 +167,8 @@ function renderTopicsListPage(ctx: UiContext, channelId: string): Response {
     <header>
       <nav>
         <a href="/ui">← Channels</a>
+        <span style="margin: 0 8px">|</span>
+        <a href="/ui/events">📊 Events</a>
       </nav>
       <h1 id="channel-name">Topics</h1>
     </header>
@@ -347,6 +357,8 @@ function renderTopicMessagesPage(ctx: UiContext, topicId: string): Response {
       <nav>
         <a href="/ui">← Channels</a>
         <span id="breadcrumb"></span>
+        <span style="margin: 0 8px">|</span>
+        <a href="/ui/events">📊 Events</a>
       </nav>
       <h1 id="topic-title">Messages</h1>
     </header>
@@ -705,6 +717,743 @@ function renderTopicMessagesPage(ctx: UiContext, topicId: string): Response {
 
       // Start WebSocket connection after initial load
       connectWebSocket();
+    }
+
+    init();
+  </script>
+</body>
+</html>`;
+
+  return new Response(html, {
+    status: 200,
+    headers: { "Content-Type": "text/html; charset=utf-8" },
+  });
+}
+
+function renderEventsPage(ctx: UiContext): Response {
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agentlip - Events</title>
+  <style>${getCommonStyles()}
+    .controls {
+      margin-bottom: 20px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .controls input {
+      padding: 6px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      background: var(--bg-color);
+      color: var(--text-color);
+      font-family: var(--font-family);
+      font-size: 0.9em;
+    }
+    .controls button {
+      padding: 6px 16px;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      background: var(--bg-color);
+      color: var(--text-color);
+      cursor: pointer;
+      font-family: var(--font-family);
+      font-size: 0.9em;
+    }
+    .controls button:hover {
+      background: var(--border-color);
+    }
+    .controls button.active {
+      background: var(--primary-color);
+      color: white;
+      border-color: var(--primary-color);
+    }
+    .status {
+      font-size: 0.9em;
+      padding: 8px 12px;
+      border-radius: 4px;
+      margin-bottom: 12px;
+    }
+    .status.info {
+      background: rgba(0, 102, 204, 0.1);
+      border: 1px solid rgba(0, 102, 204, 0.3);
+      color: var(--primary-color);
+    }
+    .status.warning {
+      background: rgba(255, 165, 0, 0.1);
+      border: 1px solid rgba(255, 165, 0, 0.3);
+      color: #ff8c00;
+    }
+    .status.error {
+      background: rgba(255, 0, 0, 0.1);
+      border: 1px solid rgba(255, 0, 0, 0.3);
+      color: #cc0000;
+    }
+    .event-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9em;
+    }
+    .event-table th {
+      text-align: left;
+      padding: 8px;
+      border-bottom: 2px solid var(--border-color);
+      font-weight: 600;
+      position: sticky;
+      top: 0;
+      background: var(--bg-color);
+      z-index: 1;
+    }
+    .event-table td {
+      padding: 8px;
+      border-bottom: 1px solid var(--border-color);
+      vertical-align: top;
+    }
+    .event-row {
+      cursor: pointer;
+    }
+    .event-row:hover {
+      background: rgba(0, 102, 204, 0.05);
+    }
+    .event-row.expanded {
+      background: rgba(0, 102, 204, 0.08);
+    }
+    .event-details {
+      display: none;
+      margin: 8px 0;
+      padding: 12px;
+      background: rgba(0, 0, 0, 0.02);
+      border-radius: 4px;
+      border: 1px solid var(--border-color);
+    }
+    .event-row.expanded .event-details {
+      display: block;
+    }
+    .event-details pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      font-size: 0.85em;
+      font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+    }
+    .event-id {
+      font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+      color: var(--meta-color);
+    }
+    .event-name {
+      font-weight: 500;
+      color: var(--primary-color);
+    }
+    .scope-info {
+      font-size: 0.85em;
+      color: var(--meta-color);
+    }
+    .entity-link {
+      color: var(--primary-color);
+      text-decoration: none;
+      font-size: 0.85em;
+    }
+    .entity-link:hover {
+      text-decoration: underline;
+    }
+    .separator {
+      text-align: center;
+      padding: 12px;
+      font-size: 0.85em;
+      color: var(--meta-color);
+      background: rgba(255, 165, 0, 0.1);
+      border: 1px solid rgba(255, 165, 0, 0.3);
+      margin: 8px 0;
+    }
+    @media (prefers-color-scheme: dark) {
+      .event-details {
+        background: rgba(255, 255, 255, 0.05);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <nav>
+        <a href="/ui">← Channels</a>
+      </nav>
+      <h1>Event Timeline</h1>
+    </header>
+    <main>
+      <div class="controls">
+        <input type="text" id="filter-name" placeholder="Filter by event name...">
+        <input type="text" id="filter-channel" placeholder="Filter by channel_id...">
+        <input type="text" id="filter-topic" placeholder="Filter by topic_id...">
+        <button id="pause-btn">Pause</button>
+        <button id="retry-btn" style="display:none">Retry Connection</button>
+      </div>
+      
+      <div id="status-container"></div>
+      <div id="loading">Loading events...</div>
+      <div id="error" style="display:none"></div>
+      
+      <table class="event-table" id="events-table" style="display:none">
+        <thead>
+          <tr>
+            <th style="width: 80px">Event ID</th>
+            <th style="width: 180px">Timestamp</th>
+            <th style="width: 200px">Name</th>
+            <th style="width: 150px">Scope</th>
+            <th>Entity</th>
+          </tr>
+        </thead>
+        <tbody id="events-tbody"></tbody>
+      </table>
+    </main>
+  </div>
+
+  <script>
+    const API_BASE = ${JSON.stringify(ctx.baseUrl)};
+    const AUTH_TOKEN = ${JSON.stringify(ctx.authToken)};
+
+    const MAX_EVENTS = 2000;
+    const MAX_BUFFER = 500;
+    const ID_REGEX = /^[a-zA-Z0-9_-]+$/;
+    
+    const state = {
+      events: new Map(), // event_id -> event object
+      eventOrder: [], // ordered event_ids
+      paused: false,
+      pausedBuffer: [],
+      ws: null,
+      highestEventId: 0,
+      reconnectAttempts: 0,
+      reconnectTimer: null,
+      filters: {
+        name: '',
+        channelId: '',
+        topicId: ''
+      }
+    };
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Status Messages
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function showStatus(message, type = 'info') {
+      const container = document.getElementById('status-container');
+      const statusEl = document.createElement('div');
+      statusEl.className = 'status ' + type;
+      statusEl.textContent = message;
+      container.innerHTML = '';
+      container.appendChild(statusEl);
+    }
+
+    function clearStatus() {
+      document.getElementById('status-container').innerHTML = '';
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // URL Validation (security)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function isValidId(id) {
+      return typeof id === 'string' && ID_REGEX.test(id);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Rendering
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function formatTimestamp(ts) {
+      const date = new Date(ts);
+      return date.toLocaleString('en-US', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+    }
+
+    function renderScope(scope) {
+      const parts = [];
+      if (scope.channel_id) parts.push('ch:' + scope.channel_id);
+      if (scope.topic_id) parts.push('tp:' + scope.topic_id);
+      if (scope.topic_id2) parts.push('tp2:' + scope.topic_id2);
+      return parts.join(', ') || '-';
+    }
+
+    function renderEntity(entity, scope) {
+      if (!entity) return '-';
+      
+      const typeText = document.createTextNode(entity.type + ':' + entity.id);
+      
+      // Create link if possible
+      if (entity.type === 'topic' && isValidId(entity.id)) {
+        const link = document.createElement('a');
+        link.className = 'entity-link';
+        link.href = '/ui/topics/' + encodeURIComponent(entity.id);
+        link.textContent = entity.type + ':' + entity.id;
+        return link;
+      }
+      
+      if (entity.type === 'message' && scope && scope.topic_id && isValidId(scope.topic_id) && isValidId(entity.id)) {
+        const link = document.createElement('a');
+        link.className = 'entity-link';
+        link.href = '/ui/topics/' + encodeURIComponent(scope.topic_id) + '#msg_' + encodeURIComponent(entity.id);
+        link.textContent = entity.type + ':' + entity.id;
+        return link;
+      }
+      
+      const span = document.createElement('span');
+      span.appendChild(typeText);
+      return span;
+    }
+
+    function createEventRow(event) {
+      const row = document.createElement('tr');
+      row.className = 'event-row';
+      row.dataset.eventId = event.event_id;
+
+      // Event ID
+      const idCell = document.createElement('td');
+      const idSpan = document.createElement('span');
+      idSpan.className = 'event-id';
+      idSpan.textContent = event.event_id;
+      idCell.appendChild(idSpan);
+      row.appendChild(idCell);
+
+      // Timestamp
+      const tsCell = document.createElement('td');
+      tsCell.textContent = formatTimestamp(event.ts);
+      row.appendChild(tsCell);
+
+      // Name
+      const nameCell = document.createElement('td');
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'event-name';
+      nameSpan.textContent = event.name;
+      nameCell.appendChild(nameSpan);
+      row.appendChild(nameCell);
+
+      // Scope
+      const scopeCell = document.createElement('td');
+      const scopeSpan = document.createElement('span');
+      scopeSpan.className = 'scope-info';
+      scopeSpan.textContent = renderScope(event.scope || {});
+      scopeCell.appendChild(scopeSpan);
+      row.appendChild(scopeCell);
+
+      // Entity
+      const entityCell = document.createElement('td');
+      const entityContent = renderEntity(event.entity, event.scope);
+      entityCell.appendChild(entityContent);
+      row.appendChild(entityCell);
+
+      // Click handler to expand/collapse details
+      row.addEventListener('click', (e) => {
+        // Don't toggle if clicking on a link
+        if (e.target.tagName === 'A') return;
+        
+        e.preventDefault();
+        toggleEventDetails(event.event_id);
+      });
+
+      return row;
+    }
+
+    function createDetailsRow(event) {
+      const detailsRow = document.createElement('tr');
+      detailsRow.className = 'event-details-row';
+      detailsRow.dataset.eventId = event.event_id;
+      detailsRow.style.display = 'none';
+
+      const detailsCell = document.createElement('td');
+      detailsCell.colSpan = 5;
+
+      const detailsDiv = document.createElement('div');
+      detailsDiv.className = 'event-details';
+
+      const pre = document.createElement('pre');
+      
+      // Lazy render JSON when expanded
+      detailsDiv.dataset.eventId = event.event_id;
+      detailsDiv.dataset.rendered = 'false';
+
+      detailsDiv.appendChild(pre);
+      detailsCell.appendChild(detailsDiv);
+      detailsRow.appendChild(detailsCell);
+
+      return detailsRow;
+    }
+
+    function toggleEventDetails(eventId) {
+      const row = document.querySelector('.event-row[data-event-id="' + eventId + '"]');
+      const detailsRow = document.querySelector('.event-details-row[data-event-id="' + eventId + '"]');
+      
+      if (!row || !detailsRow) return;
+
+      const isExpanded = row.classList.contains('expanded');
+      
+      if (isExpanded) {
+        row.classList.remove('expanded');
+        detailsRow.style.display = 'none';
+      } else {
+        row.classList.add('expanded');
+        detailsRow.style.display = 'table-row';
+        
+        // Lazy render JSON
+        const detailsDiv = detailsRow.querySelector('.event-details');
+        if (detailsDiv.dataset.rendered === 'false') {
+          const event = state.events.get(eventId);
+          if (event) {
+            const pre = detailsDiv.querySelector('pre');
+            // XSS-safe: use textContent, never innerHTML
+            pre.textContent = JSON.stringify({
+              event_id: event.event_id,
+              ts: event.ts,
+              name: event.name,
+              scope: event.scope,
+              entity: event.entity,
+              data: event.data_json
+            }, null, 2);
+            detailsDiv.dataset.rendered = 'true';
+          }
+        }
+      }
+    }
+
+    function renderEvents() {
+      const tbody = document.getElementById('events-tbody');
+      const table = document.getElementById('events-table');
+      
+      // Apply filters
+      const filtered = state.eventOrder
+        .map(id => state.events.get(id))
+        .filter(event => {
+          if (!event) return false;
+          
+          // Name filter
+          if (state.filters.name && !event.name.toLowerCase().includes(state.filters.name.toLowerCase())) {
+            return false;
+          }
+          
+          // Channel filter
+          if (state.filters.channelId && event.scope?.channel_id !== state.filters.channelId) {
+            return false;
+          }
+          
+          // Topic filter
+          if (state.filters.topicId && event.scope?.topic_id !== state.filters.topicId) {
+            return false;
+          }
+          
+          return true;
+        });
+
+      // Use DocumentFragment for batch DOM insertion
+      const fragment = document.createDocumentFragment();
+      
+      for (const event of filtered) {
+        fragment.appendChild(createEventRow(event));
+        fragment.appendChild(createDetailsRow(event));
+      }
+
+      tbody.innerHTML = '';
+      tbody.appendChild(fragment);
+      
+      table.style.display = filtered.length > 0 ? 'table' : 'none';
+      
+      if (filtered.length === 0 && state.eventOrder.length > 0) {
+        showStatus('No events match current filters', 'info');
+      } else if (state.eventOrder.length >= MAX_EVENTS) {
+        showStatus('Showing last ' + MAX_EVENTS + ' events (oldest evicted)', 'info');
+      }
+    }
+
+    function addEvent(event) {
+      // Dedupe by event_id
+      if (state.events.has(event.event_id)) return;
+      
+      state.events.set(event.event_id, event);
+      state.eventOrder.push(event.event_id);
+      
+      // Track highest event_id
+      if (event.event_id > state.highestEventId) {
+        state.highestEventId = event.event_id;
+      }
+      
+      // Evict oldest if over limit
+      if (state.eventOrder.length > MAX_EVENTS) {
+        const evictId = state.eventOrder.shift();
+        state.events.delete(evictId);
+      }
+    }
+
+    function addEvents(events) {
+      for (const event of events) {
+        addEvent(event);
+      }
+      renderEvents();
+    }
+
+    function createSeparator(message) {
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = 5;
+      td.className = 'separator';
+      td.textContent = message;
+      tr.appendChild(td);
+      return tr;
+    }
+
+    function flushPausedBuffer() {
+      if (state.pausedBuffer.length === 0) return;
+      
+      const tbody = document.getElementById('events-tbody');
+      
+      // Show separator
+      tbody.insertBefore(
+        createSeparator(state.pausedBuffer.length + ' events received while paused'),
+        tbody.firstChild
+      );
+      
+      // Add buffered events
+      addEvents(state.pausedBuffer);
+      state.pausedBuffer = [];
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Data Loading
+    // ─────────────────────────────────────────────────────────────────────────
+
+    async function loadEvents() {
+      const loading = document.getElementById('loading');
+      const error = document.getElementById('error');
+
+      try {
+        const res = await fetch(
+          API_BASE + '/api/v1/events?tail=200',
+          { headers: { 'Authorization': 'Bearer ' + AUTH_TOKEN } }
+        );
+
+        if (!res.ok) {
+          if (res.status === 503) {
+            const retryAfter = res.headers.get('Retry-After');
+            const delay = retryAfter ? parseInt(retryAfter, 10) * 1000 : 2000;
+            showStatus('Hub busy, retrying in ' + (delay / 1000) + 's...', 'warning');
+            setTimeout(loadEvents, delay);
+            return;
+          }
+          
+          if (res.status === 401 || res.status === 403) {
+            throw new Error('Authentication failed');
+          }
+          
+          throw new Error('Failed to load events: ' + res.status);
+        }
+
+        const data = await res.json();
+        
+        if (!data.events || !Array.isArray(data.events)) {
+          throw new Error('Invalid response from hub');
+        }
+
+        state.highestEventId = data.replay_until || 0;
+        
+        addEvents(data.events);
+
+        loading.style.display = 'none';
+        
+        if (data.events.length === 0) {
+          showStatus('No events yet', 'info');
+        } else {
+          clearStatus();
+        }
+
+        // Start WebSocket after successful HTTP load
+        connectWebSocket();
+        
+      } catch (err) {
+        loading.style.display = 'none';
+        error.textContent = 'Error: ' + err.message;
+        error.style.display = 'block';
+        console.error('Failed to load events:', err);
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // WebSocket Live Tail
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function connectWebSocket() {
+      if (state.ws) {
+        state.ws.close();
+        state.ws = null;
+      }
+
+      const wsUrl = new URL(API_BASE);
+      wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+      wsUrl.pathname = '/ws';
+      wsUrl.searchParams.set('token', AUTH_TOKEN);
+
+      console.log('Connecting WebSocket...');
+      const ws = new WebSocket(wsUrl.toString());
+      state.ws = ws;
+
+      ws.onopen = () => {
+        console.log('WebSocket connected');
+        state.reconnectAttempts = 0;
+        clearStatus();
+        
+        // Send hello with after_event_id
+        const hello = {
+          type: 'hello',
+          after_event_id: state.highestEventId
+        };
+        
+        // Add subscriptions if filters are active
+        if (state.filters.channelId || state.filters.topicId) {
+          hello.subscriptions = {};
+          if (state.filters.channelId) {
+            hello.subscriptions.channels = [state.filters.channelId];
+          }
+          if (state.filters.topicId) {
+            hello.subscriptions.topics = [state.filters.topicId];
+          }
+        }
+        
+        ws.send(JSON.stringify(hello));
+      };
+
+      ws.onmessage = (msgEvent) => {
+        try {
+          const msg = JSON.parse(msgEvent.data);
+
+          if (msg.type === 'hello_ok') {
+            console.log('WebSocket hello_ok, replay_until:', msg.replay_until);
+            return;
+          }
+
+          if (msg.type === 'event') {
+            handleWsEvent(msg);
+          }
+        } catch (err) {
+          console.error('WS message parse error:', err);
+        }
+      };
+
+      ws.onerror = (err) => {
+        console.error('WebSocket error:', err);
+      };
+
+      ws.onclose = () => {
+        console.log('WebSocket closed');
+        state.ws = null;
+        attemptReconnect();
+      };
+    }
+
+    function handleWsEvent(envelope) {
+      const event = {
+        event_id: envelope.event_id,
+        ts: envelope.ts,
+        name: envelope.name,
+        data_json: envelope.data || {},
+        scope: envelope.scope || {},
+        entity: envelope.entity || null
+      };
+
+      if (state.paused) {
+        // Buffer event while paused
+        state.pausedBuffer.push(event);
+        
+        // Drop oldest if buffer exceeds limit
+        if (state.pausedBuffer.length > MAX_BUFFER) {
+          const dropped = state.pausedBuffer.shift();
+          const droppedCount = state.pausedBuffer.length - MAX_BUFFER + 1;
+          showStatus('Dropped ' + droppedCount + ' events while paused (buffer full)', 'warning');
+        }
+      } else {
+        addEvents([event]);
+      }
+    }
+
+    function attemptReconnect() {
+      if (state.reconnectAttempts >= 3) {
+        showStatus('Connection lost. Click to retry.', 'error');
+        document.getElementById('retry-btn').style.display = 'inline-block';
+        return;
+      }
+
+      const delay = Math.min(30000, 1000 * Math.pow(2, state.reconnectAttempts));
+      state.reconnectAttempts++;
+      
+      showStatus('Disconnected. Reconnecting in ' + (delay / 1000) + 's... (attempt ' + state.reconnectAttempts + '/3)', 'warning');
+      
+      state.reconnectTimer = setTimeout(() => {
+        connectWebSocket();
+      }, delay);
+    }
+
+    function manualRetry() {
+      state.reconnectAttempts = 0;
+      document.getElementById('retry-btn').style.display = 'none';
+      clearStatus();
+      connectWebSocket();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Controls
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function togglePause() {
+      state.paused = !state.paused;
+      const btn = document.getElementById('pause-btn');
+      
+      if (state.paused) {
+        btn.textContent = 'Resume';
+        btn.classList.add('active');
+        showStatus('Paused (buffering up to ' + MAX_BUFFER + ' events)', 'info');
+      } else {
+        btn.textContent = 'Pause';
+        btn.classList.remove('active');
+        flushPausedBuffer();
+        clearStatus();
+      }
+    }
+
+    function setupFilters() {
+      const nameFilter = document.getElementById('filter-name');
+      const channelFilter = document.getElementById('filter-channel');
+      const topicFilter = document.getElementById('filter-topic');
+
+      const applyFilters = () => {
+        state.filters.name = nameFilter.value.trim();
+        state.filters.channelId = channelFilter.value.trim();
+        state.filters.topicId = topicFilter.value.trim();
+        renderEvents();
+      };
+
+      nameFilter.addEventListener('input', applyFilters);
+      channelFilter.addEventListener('input', applyFilters);
+      topicFilter.addEventListener('input', applyFilters);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Initialize
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function init() {
+      setupFilters();
+      
+      document.getElementById('pause-btn').addEventListener('click', togglePause);
+      document.getElementById('retry-btn').addEventListener('click', manualRetry);
+      
+      loadEvents();
     }
 
     init();

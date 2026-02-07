@@ -589,6 +589,10 @@ All events sent to clients use this envelope:
     "topic_id": null,
     "topic_id2": null
   },
+  "entity": {
+    "type": "channel",
+    "id": "ch_..."
+  },
   "data": {
     "channel": {
       "id": "ch_...",
@@ -599,6 +603,13 @@ All events sent to clients use this envelope:
   }
 }
 ```
+
+**Additive Fields (Gate D)**:
+- `entity` (optional): Entity reference for the event
+  - `type`: Entity type (e.g., `"channel"`, `"topic"`, `"message"`, `"attachment"`)
+  - `id`: Entity ID
+
+This field is additive (added in Gate D); clients should tolerate its presence or absence.
 
 ### Subscription Filtering
 

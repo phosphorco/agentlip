@@ -1,6 +1,6 @@
 {
   "name": "@agentlip/kernel",
-  "version": "0.1.0",
+  "version": "0.1.1-rc.1",
   "description": "SQLite schema, migrations, and query layer for Agentlip",
   "type": "module",
   "license": "MIT",

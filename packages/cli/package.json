@@ -1,6 +1,6 @@
 {
   "name": "agentlip",
-  "version": "0.1.0",
+  "version": "0.1.1-rc.1",
   "description": "CLI for Agentlip workspace management",
   "type": "module",
   "license": "MIT",
@@ -30,12 +30,12 @@
     "agentlip": "./src/agentlip.ts"
   },
   "dependencies": {
-    "@agentlip/client": "^0.1.0",
-    "@agentlip/workspace": "^0.1.0",
-    "@agentlip/kernel": "^0.1.0"
+    "@agentlip/client": "^0.1.1-rc.1",
+    "@agentlip/workspace": "^0.1.1-rc.1",
+    "@agentlip/kernel": "^0.1.1-rc.1"
   },
   "devDependencies": {
-    "@agentlip/hub": "^0.1.0"
+    "@agentlip/hub": "^0.1.1-rc.1"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

@@ -107,6 +107,29 @@ for await (const event of conn.events()) {
 }
 ```
 
+## Node Local Client (ESM)
+
+Requirements:
+- Node.js v22+ (ESM-only)
+- Bun installed (used to spawn the hub daemon when missing)
+
+```typescript
+import { connectToLocalAgentlip } from "agentlip/local-client";
+
+const client = await connectToLocalAgentlip({
+  cwd: process.cwd(),
+  startIfMissing: true,
+});
+
+await client.sendMessage({ topicId: "...", sender: "agent", contentRaw: "Hello" });
+
+for await (const event of client.events()) {
+  // ...
+}
+
+client.close();
+```
+
 ## Local Registry (Verdaccio)
 
 For testing package publishing and installation workflows locally:
@@ -135,7 +158,7 @@ npm adduser --registry http://127.0.0.1:4873
 
 ## Publishing
 
-All packages require **Bun** runtime (not Node.js). Install via `bun add @agentlip/client` or run the CLI with `bunx agentlip`.
+Hub/CLI packages run on **Bun** (not Node.js). SDK packages can be imported from Node.js v22+ (ESM-only); the local client helper still requires Bun installed to spawn `agentlipd`.
 
 ### Publishing Security (OIDC Migration)
 

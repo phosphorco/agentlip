@@ -19,20 +19,44 @@ This document covers starting, managing, and troubleshooting the Agentlip hub da
 ### CLI Command
 
 ```bash
-agentlipd up [--host 127.0.0.1] [--port 0] [--workspace /path/to/workspace]
+agentlipd up [--workspace <path>] [--host 127.0.0.1] [--port 0] [--idle-shutdown-ms <ms>] [--json]
 ```
 
 **Options:**
-- `--host`: Bind address (default: `127.0.0.1`). See [Security: Transport Security](security.md#transport-security).
+- `--workspace`: Workspace root directory (default: auto-discover from `cwd`; initializes at `cwd` if none found)
+- `--host`: Bind address (default: `127.0.0.1`). Localhost-only is enforced. See [Security: Transport Security](security.md#transport-security).
 - `--port`: Port number (default: `0` = random available port)
-- `--workspace`: Workspace root directory (default: auto-discover from `cwd`)
+- `--idle-shutdown-ms`: Optional idle auto-shutdown timeout (milliseconds, **daemon mode only** — requires `workspaceRoot`/`--workspace`). When enabled, the hub will stop if there are **no WS clients** and **no HTTP activity** for the configured duration. Note: `GET /health` does **not** reset the idle timer.
+- `--json`: Output connection info as JSON (never prints auth token)
 
-**Output:**
+**Output (human):**
 ```
-Hub starting at 127.0.0.1:54321
-Instance ID: 8a7f3e2d-4b1c-9d6e-5f8a-7c9e2b3d4a5f
-Auth token: (stored in .agentlip/server.json)
+✓ Hub started
+  Host:      127.0.0.1
+  Port:      54321
+  Workspace: /path/to/workspace
+  Instance:  8a7f3e2d-...
 ```
+
+**Output (`--json`):**
+```json
+{
+  "status": "running",
+  "host": "127.0.0.1",
+  "port": 54321,
+  "workspace_root": "/path/to/workspace",
+  "instance_id": "8a7f3e2d-..."
+}
+```
+
+**Exit codes:**
+- `0`: Clean shutdown
+- `1`: Error
+- `10`: Writer lock conflict (hub already running)
+
+**Auth token & server.json:**
+- In daemon mode, the hub persists connection info (including the auth token) to `.agentlip/server.json` with mode **0600**.
+- The auth token is **never printed** to stdout/stderr and must not appear in process argv.
 
 ### Programmatic Startup
 

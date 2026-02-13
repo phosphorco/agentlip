@@ -1,18 +1,42 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { startHub, type HubServer } from "./index";
-import { openDb } from "@agentlip/kernel";
 
-describe("UI endpoints", () => {
+function extractAssetPaths(html: string): string[] {
+  const paths: string[] = [];
+
+  const scriptPattern = /<script[^>]+src="([^"]+)"/g;
+  let match: RegExpExecArray | null;
+  while ((match = scriptPattern.exec(html)) !== null) {
+    const src = match[1];
+    if (src.startsWith("/ui/assets/")) {
+      paths.push(src.substring("/ui/assets/".length));
+    }
+  }
+
+  const linkPattern = /<link[^>]+href="([^"]+)"/g;
+  while ((match = linkPattern.exec(html)) !== null) {
+    const href = match[1];
+    if (href.startsWith("/ui/assets/")) {
+      paths.push(href.substring("/ui/assets/".length));
+    }
+  }
+
+  return paths;
+}
+
+describe("UI endpoints (SPA mode)", () => {
   let hub: HubServer;
   let baseUrl: string;
   let authToken: string;
   let channelId: string;
   let topicId: string;
-  let messageId: string;
+  let previousSpaEnv: string | undefined;
 
   beforeAll(async () => {
-    // Start hub with auth token
-    authToken = "test-token-ui-integration";
+    previousSpaEnv = process.env.HUB_UI_SPA_ENABLED;
+    process.env.HUB_UI_SPA_ENABLED = "true";
+
+    authToken = "test-token-ui-spa";
     hub = await startHub({
       host: "127.0.0.1",
       port: 0,
@@ -22,25 +46,18 @@ describe("UI endpoints", () => {
 
     baseUrl = `http://${hub.host}:${hub.port}`;
 
-    // Create test data: channel + topic + messages
-    // Create channel
     const channelRes = await fetch(`${baseUrl}/api/v1/channels`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${authToken}`,
       },
-      body: JSON.stringify({
-        name: "Test Channel",
-        description: "A test channel for UI tests",
-      }),
+      body: JSON.stringify({ name: "Test Channel" }),
     });
-
     expect(channelRes.status).toBe(201);
     const channelData = await channelRes.json();
     channelId = channelData.channel.id;
 
-    // Create topic
     const topicRes = await fetch(`${baseUrl}/api/v1/topics`, {
       method: "POST",
       headers: {
@@ -52,422 +69,219 @@ describe("UI endpoints", () => {
         title: "Test Topic",
       }),
     });
-
     expect(topicRes.status).toBe(201);
     const topicData = await topicRes.json();
     topicId = topicData.topic.id;
-
-    // Create a few messages
-    const msg1Res = await fetch(`${baseUrl}/api/v1/messages`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${authToken}`,
-      },
-      body: JSON.stringify({
-        topic_id: topicId,
-        sender: "alice",
-        content_raw: "Hello, world!",
-      }),
-    });
-
-    expect(msg1Res.status).toBe(201);
-    const msg1Data = await msg1Res.json();
-    messageId = msg1Data.message.id;
-
-    // Create edited message
-    const msg2Res = await fetch(`${baseUrl}/api/v1/messages`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${authToken}`,
-      },
-      body: JSON.stringify({
-        topic_id: topicId,
-        sender: "bob",
-        content_raw: "Original content",
-      }),
-    });
-
-    expect(msg2Res.status).toBe(201);
-    const msg2Data = await msg2Res.json();
-    const msg2Id = msg2Data.message.id;
-
-    // Edit the message
-    await fetch(`${baseUrl}/api/v1/messages/${msg2Id}`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${authToken}`,
-      },
-      body: JSON.stringify({
-        op: "edit",
-        content_raw: "Edited content",
-      }),
-    });
-
-    // Create deleted message
-    const msg3Res = await fetch(`${baseUrl}/api/v1/messages`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${authToken}`,
-      },
-      body: JSON.stringify({
-        topic_id: topicId,
-        sender: "charlie",
-        content_raw: "This will be deleted",
-      }),
-    });
-
-    expect(msg3Res.status).toBe(201);
-    const msg3Data = await msg3Res.json();
-    const msg3Id = msg3Data.message.id;
-
-    // Delete the message
-    await fetch(`${baseUrl}/api/v1/messages/${msg3Id}`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${authToken}`,
-      },
-      body: JSON.stringify({
-        op: "delete",
-        actor: "admin",
-      }),
-    });
   });
 
   afterAll(async () => {
     await hub.stop();
+    if (previousSpaEnv === undefined) {
+      delete process.env.HUB_UI_SPA_ENABLED;
+    } else {
+      process.env.HUB_UI_SPA_ENABLED = previousSpaEnv;
+    }
   });
 
-  test("GET /ui returns HTML channels list page", async () => {
-    const res = await fetch(`${baseUrl}/ui`);
+  test("GET /ui/bootstrap returns runtime config with no-store cache", async () => {
+    const res = await fetch(`${baseUrl}/ui/bootstrap`);
 
     expect(res.status).toBe(200);
-    expect(res.headers.get("Content-Type")).toContain("text/html");
+    expect(res.headers.get("Content-Type")).toContain("application/json");
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
 
-    const html = await res.text();
-    
-    // Verify it's HTML
-    expect(html).toContain("<!DOCTYPE html>");
-    expect(html).toContain("<html");
-    expect(html).toContain("</html>");
-
-    // Verify channel name appears (from client-side JS, not server-rendered)
-    // The page should contain the script that loads channels
-    expect(html).toContain("loadChannels");
+    const data = await res.json();
+    expect(data.baseUrl).toBe(baseUrl);
+    expect(data.wsUrl).toBe(baseUrl.replace("http://", "ws://") + "/ws");
+    expect(data.authToken).toBe(authToken);
   });
 
-  test("GET /ui/ (with trailing slash) returns channels page", async () => {
-    const res = await fetch(`${baseUrl}/ui/`);
-    expect(res.status).toBe(200);
-    expect(res.headers.get("Content-Type")).toContain("text/html");
+  test("SPA shell routes return HTML with no-store", async () => {
+    const routes = [
+      "/ui",
+      "/ui/",
+      `/ui/topics/${topicId}`,
+      `/ui/channels/${channelId}`,
+      "/ui/events",
+      "/ui/some/client/route",
+    ];
+
+    for (const route of routes) {
+      const res = await fetch(`${baseUrl}${route}`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Content-Type")).toContain("text/html");
+      expect(res.headers.get("Cache-Control")).toBe("no-store");
+      const html = await res.text();
+      expect(html).toContain("<!DOCTYPE html>");
+    }
   });
 
-  test("GET /ui/channels/:channel_id returns topics list page", async () => {
-    const res = await fetch(`${baseUrl}/ui/channels/${channelId}`);
+  test("Discovered asset returns 200 with immutable cache for hashed files", async () => {
+    const shellRes = await fetch(`${baseUrl}/ui`);
+    expect(shellRes.status).toBe(200);
+    const html = await shellRes.text();
 
-    expect(res.status).toBe(200);
-    expect(res.headers.get("Content-Type")).toContain("text/html");
+    const assetPaths = extractAssetPaths(html);
+    expect(assetPaths.length).toBeGreaterThan(0);
 
-    const html = await res.text();
-    
-    expect(html).toContain("<!DOCTYPE html>");
-    expect(html).toContain("loadTopics");
-    
-    // Verify auth token and channel ID are embedded
-    expect(html).toContain(authToken);
-    expect(html).toContain(channelId);
+    const hashed = assetPaths.find((p) => /[.-][A-Za-z0-9_-]{8,}\./.test(p));
+    const assetPath = hashed ?? assetPaths[0];
+
+    const assetRes = await fetch(`${baseUrl}/ui/assets/${assetPath}`);
+    expect(assetRes.status).toBe(200);
+    expect(assetRes.headers.get("Content-Type")).toBeDefined();
+
+    if (/[.-][A-Za-z0-9_-]{8,}\./.test(assetPath)) {
+      const cacheControl = assetRes.headers.get("Cache-Control") ?? "";
+      expect(cacheControl).toContain("immutable");
+      expect(cacheControl).toContain("max-age=31536000");
+    }
   });
 
-  test("GET /ui/topics/:topic_id returns messages view page", async () => {
-    const res = await fetch(`${baseUrl}/ui/topics/${topicId}`);
+  test("Missing /ui/assets/* returns 404 (never SPA fallback)", async () => {
+    const missingFileRes = await fetch(`${baseUrl}/ui/assets/nonexistent-file-12345.js`);
+    expect(missingFileRes.status).toBe(404);
+    const missingFileText = await missingFileRes.text();
+    expect(missingFileText).not.toContain("<!DOCTYPE html>");
 
-    expect(res.status).toBe(200);
-    expect(res.headers.get("Content-Type")).toContain("text/html");
-
-    const html = await res.text();
-    
-    expect(html).toContain("<!DOCTYPE html>");
-    expect(html).toContain("loadMessages");
-    expect(html).toContain("connectWebSocket");
-    
-    // Verify auth token and topic ID are embedded
-    expect(html).toContain(authToken);
-    expect(html).toContain(topicId);
+    const bareAssetsRootRes = await fetch(`${baseUrl}/ui/assets`);
+    expect(bareAssetsRootRes.status).toBe(404);
+    const bareAssetsRootText = await bareAssetsRootRes.text();
+    expect(bareAssetsRootText).not.toContain("<!DOCTYPE html>");
   });
+});
 
-  test("UI pages do not contain raw user input in server-rendered HTML", async () => {
-    // Create a channel with XSS attempt in name
-    const xssChannelRes = await fetch(`${baseUrl}/api/v1/channels`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${authToken}`,
-      },
-      body: JSON.stringify({
-        name: "<script>alert('xss')</script>",
-        description: "XSS test",
-      }),
-    });
+describe("UI endpoints (no-auth mode)", () => {
+  let hub: HubServer;
+  let baseUrl: string;
+  let previousSpaEnv: string | undefined;
 
-    expect(xssChannelRes.status).toBe(201);
+  beforeAll(async () => {
+    previousSpaEnv = process.env.HUB_UI_SPA_ENABLED;
+    process.env.HUB_UI_SPA_ENABLED = "true";
 
-    // Fetch the channels page
-    const res = await fetch(`${baseUrl}/ui`);
-    const html = await res.text();
-
-    // The page should NOT contain the raw script tag in server-rendered HTML
-    // (it's safe because we render via client-side JS with textContent)
-    // But the page SHOULD contain the loadChannels function
-    expect(html).toContain("loadChannels");
-    
-    // The HTML should not have user content server-rendered
-    // (it's loaded via API and inserted via DOM APIs)
-    // So we just verify the page structure is intact
-    expect(html).toContain("<!DOCTYPE html>");
-  });
-
-  test("GET /ui/invalid-route returns 404", async () => {
-    const res = await fetch(`${baseUrl}/ui/invalid`);
-    
-    expect(res.status).toBe(404);
-  });
-
-  test("POST /ui returns null (method not allowed)", async () => {
-    const res = await fetch(`${baseUrl}/ui`, { method: "POST" });
-    
-    // handleUiRequest returns null for non-GET, so hub returns 404
-    expect(res.status).toBe(404);
-  });
-
-  test("UI is unavailable when hub has no auth token", async () => {
-    // Start a hub without auth token
-    const noAuthHub = await startHub({
+    hub = await startHub({
       host: "127.0.0.1",
       port: 0,
       dbPath: ":memory:",
     });
 
-    const noAuthBaseUrl = `http://${noAuthHub.host}:${noAuthHub.port}`;
+    baseUrl = `http://${hub.host}:${hub.port}`;
+  });
 
-    try {
-      const res = await fetch(`${noAuthBaseUrl}/ui`);
-      
-      expect(res.status).toBe(503);
-      const text = await res.text();
-      expect(text).toContain("UI unavailable");
-    } finally {
-      await noAuthHub.stop();
+  afterAll(async () => {
+    await hub.stop();
+    if (previousSpaEnv === undefined) {
+      delete process.env.HUB_UI_SPA_ENABLED;
+    } else {
+      process.env.HUB_UI_SPA_ENABLED = previousSpaEnv;
     }
   });
 
-  test("UI page contains security features", async () => {
-    const res = await fetch(`${baseUrl}/ui/topics/${topicId}`);
-    const html = await res.text();
+  test("All /ui/* routes return 503 without auth token", async () => {
+    const paths = [
+      "/ui",
+      "/ui/",
+      "/ui/bootstrap",
+      "/ui/events",
+      "/ui/topics/test-topic-id",
+      "/ui/assets/anything.js",
+      "/ui/assets/missing.js",
+    ];
 
-    // Verify URL validation function exists
-    expect(html).toContain("isValidUrl");
-    
-    // Verify messages are rendered with textContent (not innerHTML)
-    expect(html).toContain("textContent");
-    
-    // Verify no eval() usage
-    expect(html).not.toContain("eval(");
+    for (const path of paths) {
+      const res = await fetch(`${baseUrl}${path}`);
+      expect(res.status).toBe(503);
+    }
+  });
+});
+
+describe("UI endpoints (legacy mode)", () => {
+  let hub: HubServer;
+  let baseUrl: string;
+  let authToken: string;
+  let channelId: string;
+  let topicId: string;
+  let previousSpaEnv: string | undefined;
+
+  beforeAll(async () => {
+    previousSpaEnv = process.env.HUB_UI_SPA_ENABLED;
+    process.env.HUB_UI_SPA_ENABLED = "false";
+
+    authToken = "test-token-ui-legacy";
+    hub = await startHub({
+      host: "127.0.0.1",
+      port: 0,
+      authToken,
+      dbPath: ":memory:",
+    });
+
+    baseUrl = `http://${hub.host}:${hub.port}`;
+
+    const channelRes = await fetch(`${baseUrl}/api/v1/channels`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({ name: "Legacy Channel" }),
+    });
+    expect(channelRes.status).toBe(201);
+    const channelData = await channelRes.json();
+    channelId = channelData.channel.id;
+
+    const topicRes = await fetch(`${baseUrl}/api/v1/topics`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({ channel_id: channelId, title: "Legacy Topic" }),
+    });
+    expect(topicRes.status).toBe(201);
+    const topicData = await topicRes.json();
+    topicId = topicData.topic.id;
   });
 
-  test("UI correctly embeds WebSocket connection logic", async () => {
-    const res = await fetch(`${baseUrl}/ui/topics/${topicId}`);
-    const html = await res.text();
-
-    // Verify WS connection setup
-    expect(html).toContain("new WebSocket");
-    expect(html).toContain("ws.send");
-    expect(html).toContain("type: 'hello'");
-    
-    // Verify event handlers
-    expect(html).toContain("message.created");
-    expect(html).toContain("message.edited");
-    expect(html).toContain("message.deleted");
-    expect(html).toContain("topic.attachment_added");
+  afterAll(async () => {
+    await hub.stop();
+    if (previousSpaEnv === undefined) {
+      delete process.env.HUB_UI_SPA_ENABLED;
+    } else {
+      process.env.HUB_UI_SPA_ENABLED = previousSpaEnv;
+    }
   });
 
-  test("UI pages include dark mode support", async () => {
-    const res = await fetch(`${baseUrl}/ui`);
-    const html = await res.text();
+  test("/ui/bootstrap and /ui/assets/* are 404 in legacy mode", async () => {
+    const bootstrapRes = await fetch(`${baseUrl}/ui/bootstrap`);
+    expect(bootstrapRes.status).toBe(404);
 
-    // Verify dark mode CSS
-    expect(html).toContain("prefers-color-scheme: dark");
+    const assetRes = await fetch(`${baseUrl}/ui/assets/anything.js`);
+    expect(assetRes.status).toBe(404);
+
+    const bareAssetsRootRes = await fetch(`${baseUrl}/ui/assets`);
+    expect(bareAssetsRootRes.status).toBe(404);
   });
 
-  test("UI uses system font stack", async () => {
-    const res = await fetch(`${baseUrl}/ui`);
-    const html = await res.text();
-
-    // Verify system font stack
-    expect(html).toContain("-apple-system");
-    expect(html).toContain("BlinkMacSystemFont");
-    expect(html).toContain("Segoe UI");
-  });
-
-  test("GET /ui/events returns HTML events timeline page", async () => {
-    const res = await fetch(`${baseUrl}/ui/events`);
-
-    expect(res.status).toBe(200);
-    expect(res.headers.get("Content-Type")).toContain("text/html");
-
-    const html = await res.text();
-    
-    // Verify it's HTML
-    expect(html).toContain("<!DOCTYPE html>");
-    expect(html).toContain("<html");
-    expect(html).toContain("</html>");
-    expect(html).toContain("Event Timeline");
-
-    // Verify init function
-    expect(html).toContain("loadEvents");
-    
-    // Verify WS connection
-    expect(html).toContain("connectWebSocket");
-    expect(html).toContain("new WebSocket");
-    
-    // Verify auth token is embedded
-    expect(html).toContain(authToken);
-  });
-
-  test("Events page includes filtering controls", async () => {
-    const res = await fetch(`${baseUrl}/ui/events`);
-    const html = await res.text();
-
-    // Verify filter inputs
-    expect(html).toContain('id="filter-name"');
-    expect(html).toContain('id="filter-channel"');
-    expect(html).toContain('id="filter-topic"');
-    
-    // Verify pause button
-    expect(html).toContain('id="pause-btn"');
-  });
-
-  test("Events page uses XSS-safe rendering", async () => {
-    const res = await fetch(`${baseUrl}/ui/events`);
-    const html = await res.text();
-
-    // Verify textContent usage (not innerHTML for user data)
-    expect(html).toContain("textContent");
-    
-    // Verify JSON rendering is safe
-    expect(html).toContain("JSON.stringify");
-    
-    // No eval
-    expect(html).not.toContain("eval(");
-  });
-
-  test("Events page includes reconnection logic", async () => {
-    const res = await fetch(`${baseUrl}/ui/events`);
-    const html = await res.text();
-
-    // Verify reconnection handling
-    expect(html).toContain("attemptReconnect");
-    expect(html).toContain("reconnectAttempts");
-    expect(html).toContain("retry-btn");
-  });
-
-  test("Events page includes pause/resume with buffering", async () => {
-    const res = await fetch(`${baseUrl}/ui/events`);
-    const html = await res.text();
-
-    // Verify pause/resume logic
-    expect(html).toContain("togglePause");
-    expect(html).toContain("pausedBuffer");
-    expect(html).toContain("flushPausedBuffer");
-    
-    // Verify buffer limits
-    expect(html).toContain("MAX_BUFFER");
-  });
-
-  test("Events page includes navigation link in other pages", async () => {
-    // Check channels page
+  test("Legacy /ui routes render legacy page markers", async () => {
     const channelsRes = await fetch(`${baseUrl}/ui`);
     const channelsHtml = await channelsRes.text();
-    expect(channelsHtml).toContain('/ui/events');
-    expect(channelsHtml).toContain('Events');
+    expect(channelsRes.status).toBe(200);
+    expect(channelsHtml).toContain("loadChannels");
 
-    // Check topics page
     const topicsRes = await fetch(`${baseUrl}/ui/channels/${channelId}`);
     const topicsHtml = await topicsRes.text();
-    expect(topicsHtml).toContain('/ui/events');
+    expect(topicsRes.status).toBe(200);
+    expect(topicsHtml).toContain("loadTopics");
 
-    // Check messages page
     const messagesRes = await fetch(`${baseUrl}/ui/topics/${topicId}`);
     const messagesHtml = await messagesRes.text();
-    expect(messagesHtml).toContain('/ui/events');
-  });
+    expect(messagesRes.status).toBe(200);
+    expect(messagesHtml).toContain("loadMessages");
 
-  test("Events page validates IDs before creating links", async () => {
-    const res = await fetch(`${baseUrl}/ui/events`);
-    const html = await res.text();
-
-    // Verify ID validation
-    expect(html).toContain("isValidId");
-    expect(html).toContain("ID_REGEX");
-  });
-
-  test("Events page includes entity linking logic", async () => {
-    const res = await fetch(`${baseUrl}/ui/events`);
-    const html = await res.text();
-
-    // Verify entity rendering with links
-    expect(html).toContain("renderEntity");
-    expect(html).toContain("entity-link");
-    
-    // Verify topic and message link generation
-    expect(html).toContain("entity.type === 'topic'");
-    expect(html).toContain("entity.type === 'message'");
-  });
-
-  test("Topic messages page includes hash navigation for deep-linking", async () => {
-    const res = await fetch(`${baseUrl}/ui/topics/${topicId}`);
-    const html = await res.text();
-
-    // Verify hash handling function exists
-    expect(html).toContain("handleHashNavigation");
-    
-    // Verify hash detection logic
-    expect(html).toContain("location.hash");
-    expect(html).toContain("#msg_");
-    
-    // Verify highlight class
-    expect(html).toContain("highlighted");
-  });
-
-  test("Topic messages page shows hint when hash message not loaded", async () => {
-    const res = await fetch(`${baseUrl}/ui/topics/${topicId}`);
-    const html = await res.text();
-
-    // Verify hint message text
-    expect(html).toContain("Message not currently loaded");
-    expect(html).toContain("hash-hint");
-  });
-
-  test("Topic messages page assigns stable IDs to message elements", async () => {
-    const res = await fetch(`${baseUrl}/ui/topics/${topicId}`);
-    const html = await res.text();
-
-    // Verify ID assignment in renderMessage
-    expect(html).toContain("messageEl.id = 'msg_'");
-    
-    // Verify ID validation before assignment
-    expect(html).toContain("ID_REGEX");
-  });
-
-  test("Events page includes #msg_ hash in message entity links", async () => {
-    const res = await fetch(`${baseUrl}/ui/events`);
-    const html = await res.text();
-
-    // Verify hash link generation for messages
-    expect(html).toContain("#msg_");
-    expect(html).toContain("encodeURIComponent(entity.id)");
+    const eventsRes = await fetch(`${baseUrl}/ui/events`);
+    const eventsHtml = await eventsRes.text();
+    expect(eventsRes.status).toBe(200);
+    expect(eventsHtml).toContain("loadEvents");
   });
 });

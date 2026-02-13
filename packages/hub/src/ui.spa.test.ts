@@ -13,8 +13,6 @@ describe("SPA security (malicious payload inert rendering)", () => {
   let topicId: string;
 
   beforeAll(async () => {
-    process.env.HUB_UI_SPA_ENABLED = "true";
-
     authToken = "test-token-spa-security";
     hub = await startHub({
       host: "127.0.0.1",
@@ -193,8 +191,6 @@ describe("SPA deep link behavior", () => {
   let authToken: string;
 
   beforeAll(async () => {
-    process.env.HUB_UI_SPA_ENABLED = "true";
-
     authToken = "test-token-spa-deeplink";
     hub = await startHub({
       host: "127.0.0.1",
@@ -254,8 +250,6 @@ describe("WebSocket integration contracts (SPA mode)", () => {
   let topicId: string;
 
   beforeAll(async () => {
-    process.env.HUB_UI_SPA_ENABLED = "true";
-
     authToken = "test-token-spa-ws";
     hub = await startHub({
       host: "127.0.0.1",
@@ -423,8 +417,6 @@ describe("Events page entity link generation", () => {
   let messageId: string;
 
   beforeAll(async () => {
-    process.env.HUB_UI_SPA_ENABLED = "true";
-
     authToken = "test-token-entity-links";
     hub = await startHub({
       host: "127.0.0.1",

@@ -34,7 +34,7 @@ describe("Security Headers", () => {
     "x-frame-options": "DENY",
     "x-content-type-options": "nosniff",
     "x-xss-protection": "1; mode=block",
-    "content-security-policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://localhost:* ws://127.0.0.1:*; frame-ancestors 'none'",
+    "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ws://localhost:* ws://127.0.0.1:*; frame-ancestors 'none'",
     "referrer-policy": "no-referrer",
   } as const;
 

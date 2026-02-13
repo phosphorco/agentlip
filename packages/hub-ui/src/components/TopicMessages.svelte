@@ -145,7 +145,7 @@
       {#if topicData}
         <span> / {topicData.channel.name}</span>
       {/if}
-      <span style="margin: 0 8px">|</span>
+      <span class="nav-separator">|</span>
       <a href="/ui/events" onclick={(e) => { e.preventDefault(); onNavigate("/events"); }}>
         📊 Events
       </a>
@@ -270,6 +270,10 @@
 
   nav a:hover {
     text-decoration: underline;
+  }
+
+  .nav-separator {
+    margin: 0 8px;
   }
 
   .status {

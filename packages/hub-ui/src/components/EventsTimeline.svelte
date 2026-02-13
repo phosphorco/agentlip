@@ -247,10 +247,10 @@
     <table class="event-table">
       <thead>
         <tr>
-          <th style="width: 80px">Event ID</th>
-          <th style="width: 180px">Timestamp</th>
-          <th style="width: 200px">Name</th>
-          <th style="width: 150px">Scope</th>
+          <th class="col-event-id">Event ID</th>
+          <th class="col-timestamp">Timestamp</th>
+          <th class="col-name">Name</th>
+          <th class="col-scope">Scope</th>
           <th>Entity</th>
         </tr>
       </thead>
@@ -447,6 +447,22 @@
     top: 0;
     background: var(--bg-color);
     z-index: 1;
+  }
+
+  .col-event-id {
+    width: 80px;
+  }
+
+  .col-timestamp {
+    width: 180px;
+  }
+
+  .col-name {
+    width: 200px;
+  }
+
+  .col-scope {
+    width: 150px;
   }
 
   .event-table td {

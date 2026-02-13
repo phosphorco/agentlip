@@ -914,6 +914,84 @@ agentlipd up
 
 ---
 
+## UI SPA Cutover (Completed)
+
+### Background
+
+The hub UI was migrated from inline HTML/CSS/JS to a Svelte 5 SPA served from `/ui/*` routes. The migration used a temporary feature flag (`HUB_UI_SPA_ENABLED`) during rollout; that flag was removed at final cutover.
+
+### Cutover Timeline
+
+1. **Gate 1-3 (completed):** SPA build pipeline, bootstrap endpoint, route migration with feature flag
+2. **Soak period (completed):** Flag defaulted to `true`; legacy code path available via `HUB_UI_SPA_ENABLED=false`
+3. **Gate 4 (completed):** Legacy code removed; CSP tightened; flag removed
+
+### Post-Cutover Rollback
+
+**After legacy code removal (current state):**
+
+- **Rollback method:** Redeploy previous known-good release (e.g., v0.X.Y-1)
+- **Feature flag no longer available:** Setting `HUB_UI_SPA_ENABLED` has no effect
+- **CSP updated:** Removed `'unsafe-inline'` from `script-src` and `style-src` (SPA has no inline scripts/styles)
+
+**Cutover verification checklist (required before/at removal):**
+
+- Run `bun run typecheck`
+- Run `bun test packages/hub`
+- Run full workspace `bun test`
+- Verify route matrix behavior:
+  - `/ui` and deep `/ui/*` routes serve SPA shell
+  - `/ui/bootstrap` returns runtime JSON
+  - `/ui/assets/*` serves assets and missing assets return 404 (no shell fallback)
+  - no-auth mode returns 503 for all `/ui/*`
+- Verify CSP headers include no `unsafe-inline` in `script-src` / `style-src`
+- Document rollback path for production deployments (redeploy previous release)
+
+**Steady-state behavior:**
+
+| Route | Behavior |
+|-------|----------|
+| `/ui` | Serves SPA shell (Svelte app) |
+| `/ui/bootstrap` | Returns runtime config JSON (`baseUrl`, `wsUrl`, `authToken`) |
+| `/ui/assets/*` | Serves static JS/CSS assets (hashed files get immutable cache) |
+| Deep client routes (`/ui/channels/:id`, `/ui/topics/:id`, `/ui/events`) | SPA shell (client-side routing) |
+| Missing `/ui/assets/*` | 404 (never SPA fallback) |
+| All `/ui/*` routes (no auth token) | 503 (UI unavailable) |
+
+**Emergency rollback procedure:**
+
+If critical UI regression discovered post-cutover:
+
+1. Identify last known-good release (e.g., v0.1.5)
+2. Deploy previous release:
+   ```bash
+   git checkout v0.1.5
+   bun install
+   agentlipd down
+   agentlipd up
+   ```
+3. Or via package manager (if using published releases):
+   ```bash
+   bun add @agentlip/hub@0.1.5
+   agentlipd down
+   agentlipd up
+   ```
+4. Report issue and prepare patch release
+
+**CSP policy (current):**
+
+```
+default-src 'self';
+script-src 'self';
+style-src 'self';
+connect-src 'self' ws://localhost:* ws://127.0.0.1:*;
+frame-ancestors 'none'
+```
+
+**Note:** `'unsafe-inline'` removed from `script-src` and `style-src` after legacy removal (SPA uses external JS/CSS files only).
+
+---
+
 ## See Also
 
 - [Security Documentation](security.md) - Threat model, authentication, plugin isolation

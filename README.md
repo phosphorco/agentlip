@@ -43,6 +43,27 @@ bun run typecheck     # tsc --noEmit
 - **Writes:** All mutations go through the hub's HTTP API
 - **Events:** Monotonic `event_id` stream; WS provides replay + live fanout
 
+## Web UI
+
+The hub serves a Svelte 5 SPA at `/ui` for browsing channels, topics, messages, and events:
+
+```bash
+# Start hub in daemon mode
+agentlipd up
+
+# Open browser to http://127.0.0.1:{port}/ui
+# (port and auth token read from .agentlip/server.json)
+```
+
+**UI Features:**
+
+- Browse channels and topics
+- View message threads with live updates and deep-link support (`#msg_<id>`)
+- Filter events timeline by name/channel/topic
+- Pause/resume event stream with bounded buffer
+
+**Note:** By default the hub binds localhost-only. UI routes are available when the hub has an auth token configured (daemon mode sets this automatically).
+
 ## Testing
 
 ```bash

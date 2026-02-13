@@ -24,18 +24,14 @@ function extractAssetPaths(html: string): string[] {
   return paths;
 }
 
-describe("UI endpoints (SPA mode)", () => {
+describe("UI endpoints (SPA)", () => {
   let hub: HubServer;
   let baseUrl: string;
   let authToken: string;
   let channelId: string;
   let topicId: string;
-  let previousSpaEnv: string | undefined;
 
   beforeAll(async () => {
-    previousSpaEnv = process.env.HUB_UI_SPA_ENABLED;
-    process.env.HUB_UI_SPA_ENABLED = "true";
-
     authToken = "test-token-ui-spa";
     hub = await startHub({
       host: "127.0.0.1",
@@ -76,11 +72,6 @@ describe("UI endpoints (SPA mode)", () => {
 
   afterAll(async () => {
     await hub.stop();
-    if (previousSpaEnv === undefined) {
-      delete process.env.HUB_UI_SPA_ENABLED;
-    } else {
-      process.env.HUB_UI_SPA_ENABLED = previousSpaEnv;
-    }
   });
 
   test("GET /ui/bootstrap returns runtime config with no-store cache", async () => {
@@ -149,17 +140,57 @@ describe("UI endpoints (SPA mode)", () => {
     const bareAssetsRootText = await bareAssetsRootRes.text();
     expect(bareAssetsRootText).not.toContain("<!DOCTYPE html>");
   });
+
+  test("CSP header does not contain unsafe-inline", async () => {
+    const res = await fetch(`${baseUrl}/ui`);
+    const csp = res.headers.get("Content-Security-Policy");
+    expect(csp).toBeDefined();
+    expect(csp).not.toContain("unsafe-inline");
+  });
+
+  test("HUB_UI_SPA_ENABLED=false at startup does not disable SPA contracts", async () => {
+    const previous = process.env.HUB_UI_SPA_ENABLED;
+    process.env.HUB_UI_SPA_ENABLED = "false";
+
+    let hubWithFlag: HubServer | null = null;
+
+    try {
+      const authTokenWithFlag = "test-token-ui-spa-flag-false";
+      hubWithFlag = await startHub({
+        host: "127.0.0.1",
+        port: 0,
+        authToken: authTokenWithFlag,
+        dbPath: ":memory:",
+      });
+
+      const baseUrlWithFlag = `http://${hubWithFlag.host}:${hubWithFlag.port}`;
+
+      const bootstrapRes = await fetch(`${baseUrlWithFlag}/ui/bootstrap`);
+      expect(bootstrapRes.status).toBe(200);
+      expect(bootstrapRes.headers.get("Content-Type")).toContain("application/json");
+
+      const deepRouteRes = await fetch(`${baseUrlWithFlag}/ui/topics/topic-test`);
+      expect(deepRouteRes.status).toBe(200);
+      expect(deepRouteRes.headers.get("Content-Type")).toContain("text/html");
+    } finally {
+      if (hubWithFlag) {
+        await hubWithFlag.stop();
+      }
+
+      if (previous === undefined) {
+        delete process.env.HUB_UI_SPA_ENABLED;
+      } else {
+        process.env.HUB_UI_SPA_ENABLED = previous;
+      }
+    }
+  });
 });
 
 describe("UI endpoints (no-auth mode)", () => {
   let hub: HubServer;
   let baseUrl: string;
-  let previousSpaEnv: string | undefined;
 
   beforeAll(async () => {
-    previousSpaEnv = process.env.HUB_UI_SPA_ENABLED;
-    process.env.HUB_UI_SPA_ENABLED = "true";
-
     hub = await startHub({
       host: "127.0.0.1",
       port: 0,
@@ -171,11 +202,6 @@ describe("UI endpoints (no-auth mode)", () => {
 
   afterAll(async () => {
     await hub.stop();
-    if (previousSpaEnv === undefined) {
-      delete process.env.HUB_UI_SPA_ENABLED;
-    } else {
-      process.env.HUB_UI_SPA_ENABLED = previousSpaEnv;
-    }
   });
 
   test("All /ui/* routes return 503 without auth token", async () => {
@@ -193,95 +219,5 @@ describe("UI endpoints (no-auth mode)", () => {
       const res = await fetch(`${baseUrl}${path}`);
       expect(res.status).toBe(503);
     }
-  });
-});
-
-describe("UI endpoints (legacy mode)", () => {
-  let hub: HubServer;
-  let baseUrl: string;
-  let authToken: string;
-  let channelId: string;
-  let topicId: string;
-  let previousSpaEnv: string | undefined;
-
-  beforeAll(async () => {
-    previousSpaEnv = process.env.HUB_UI_SPA_ENABLED;
-    process.env.HUB_UI_SPA_ENABLED = "false";
-
-    authToken = "test-token-ui-legacy";
-    hub = await startHub({
-      host: "127.0.0.1",
-      port: 0,
-      authToken,
-      dbPath: ":memory:",
-    });
-
-    baseUrl = `http://${hub.host}:${hub.port}`;
-
-    const channelRes = await fetch(`${baseUrl}/api/v1/channels`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${authToken}`,
-      },
-      body: JSON.stringify({ name: "Legacy Channel" }),
-    });
-    expect(channelRes.status).toBe(201);
-    const channelData = await channelRes.json();
-    channelId = channelData.channel.id;
-
-    const topicRes = await fetch(`${baseUrl}/api/v1/topics`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${authToken}`,
-      },
-      body: JSON.stringify({ channel_id: channelId, title: "Legacy Topic" }),
-    });
-    expect(topicRes.status).toBe(201);
-    const topicData = await topicRes.json();
-    topicId = topicData.topic.id;
-  });
-
-  afterAll(async () => {
-    await hub.stop();
-    if (previousSpaEnv === undefined) {
-      delete process.env.HUB_UI_SPA_ENABLED;
-    } else {
-      process.env.HUB_UI_SPA_ENABLED = previousSpaEnv;
-    }
-  });
-
-  test("/ui/bootstrap and /ui/assets/* are 404 in legacy mode", async () => {
-    const bootstrapRes = await fetch(`${baseUrl}/ui/bootstrap`);
-    expect(bootstrapRes.status).toBe(404);
-
-    const assetRes = await fetch(`${baseUrl}/ui/assets/anything.js`);
-    expect(assetRes.status).toBe(404);
-
-    const bareAssetsRootRes = await fetch(`${baseUrl}/ui/assets`);
-    expect(bareAssetsRootRes.status).toBe(404);
-  });
-
-  test("Legacy /ui routes render legacy page markers", async () => {
-    const channelsRes = await fetch(`${baseUrl}/ui`);
-    const channelsHtml = await channelsRes.text();
-    expect(channelsRes.status).toBe(200);
-    expect(channelsHtml).toContain("loadChannels");
-
-    const topicsRes = await fetch(`${baseUrl}/ui/channels/${channelId}`);
-    const topicsHtml = await topicsRes.text();
-    expect(topicsRes.status).toBe(200);
-    expect(topicsHtml).toContain("loadTopics");
-
-    const messagesRes = await fetch(`${baseUrl}/ui/topics/${topicId}`);
-    const messagesHtml = await messagesRes.text();
-    expect(messagesRes.status).toBe(200);
-    expect(messagesHtml).toContain("loadMessages");
-
-    const eventsRes = await fetch(`${baseUrl}/ui/events`);
-    const eventsHtml = await eventsRes.text();
-    expect(eventsRes.status).toBe(200);
-    expect(eventsHtml).toContain("loadEvents");
   });
 });
